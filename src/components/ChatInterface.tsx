@@ -473,7 +473,6 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     return (
         <>
             <div className="chat-container">
-                <ProgressBar currentTurn={turnCount} totalTurns={8} />
                 <div className="chat-messages">
                     {messages.map((msg, idx) => (
                         <div
@@ -512,6 +511,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
                     <div ref={messagesEndRef} />
                 </div>
+
+                <ProgressBar currentTurn={turnCount} totalTurns={8} />
 
                 <div className="chat-input-container">
                     <button

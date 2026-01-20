@@ -1335,6 +1335,9 @@ body {
   padding: 12px 24px;
   background: var(--surface);
   border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .progress-info {
@@ -1482,9 +1485,15 @@ body {
   box-shadow: var(--shadow-md);
 }
 
-.feature-icon {
-  font-size: 2rem;
+.feature-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .feature-item strong {
