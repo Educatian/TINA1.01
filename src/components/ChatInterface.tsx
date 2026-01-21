@@ -13,7 +13,7 @@ import {
     markVoiceInputUsed
 } from '../services/analyticsService';
 import { ReportModal } from './ReportModal';
-import { QuickReply, QUICK_REPLY_QUESTIONS, QuickReplyQuestion } from './QuickReply';
+import { QuickReply, QuickReplyQuestion, detectQuickReply } from './QuickReply';
 import { ProgressBar } from './ProgressBar';
 import type { Message, Session } from '../types';
 
@@ -65,7 +65,15 @@ Stages:
 Management per turn:
 (a) Reflect core essence of user's previous statement (1-2 sentences).
 (b) Ask 1 Question (or choice-based question). Keep it short. Only 1 question at a time.
-If user answer is very short, you may add 1 follow-up probe (max 2 questions total not recommended, prefer 1).
+
+**CRITICAL RULE: ONE QUESTION PER RESPONSE**
+- NEVER ask multiple questions in one response.
+- If you want to ask about two topics, pick the most important one.
+- Bad example: "What tools do you use? And how do you verify them?"
+- Good example: "What tools do you use most often?"
+- Wait for the user's answer before asking another question.
+
+If user answer is very short, you may ask ONE gentle follow-up (e.g., "Could you tell me more about that?").
 
 3) Question Design (TINA's Persona)
 Tone: Warm, encouraging, professional but friendly. Like a supportive colleague.
@@ -146,6 +154,9 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     // Quick Reply state
     const [currentQuickReply, setCurrentQuickReply] = useState<QuickReplyQuestion | null>(null);
     const [quickReplyResponses, setQuickReplyResponses] = useState<Record<string, string>>({});
+    // Message queue for when AI is processing
+    const [pendingMessages, setPendingMessages] = useState<string[]>([]);
+    const isProcessingRef = useRef(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const recognitionRef = useRef<any>(null);
@@ -168,19 +179,32 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     setMessages(existingMessages);
                     setTurnCount(resumeSession.turn_count || 0);
 
-                    // Initialize AI with history context
-                    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+                    // Initialize AI with history context - use same API key access as new session
+                    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.API_KEY || '';
+                    if (!apiKey) {
+                        setMessages([...existingMessages, {
+                            role: 'model',
+                            text: 'Error: API key not found. Please check your environment configuration.',
+                            timestamp: new Date().toISOString()
+                        }]);
+                        return;
+                    }
+
+                    const ai = new GoogleGenAI({ apiKey });
                     const historyContext = existingMessages.map(m =>
                         `${m.role === 'user' ? 'User' : 'TINA'}: ${m.text}`
                     ).join('\n\n');
 
                     const chat = ai.chats.create({
-                        model: 'gemini-2.0-flash',
+                        model: 'gemini-2.5-flash',
                         config: {
                             systemInstruction: SYSTEM_INSTRUCTION + `\n\nPREVIOUS CONVERSATION CONTEXT:\n${historyContext}\n\nContinue the conversation naturally from where we left off.`,
                         },
                     });
                     setChatSession(chat);
+
+                    // Re-initialize analytics tracking for resumed session
+                    initSessionTracking();
 
                     // Clear the navigation state
                     navigate('/', { replace: true, state: {} });
@@ -265,20 +289,33 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     }, [messages, sessionId, turnCount]);
 
     const handleSend = async () => {
-        if (!input.trim() || !chatSession || isLoading) return;
+        if (!input.trim() || !chatSession) return;
 
         if (isRecording && recognitionRef.current) {
             recognitionRef.current.stop();
             setIsRecording(false);
         }
 
-        const userMsg: Message = { role: 'user', text: input.trim(), timestamp: new Date().toISOString() };
+        const userText = input.trim();
         setInput('');
+
+        // If AI is currently processing, add to queue instead of sending immediately
+        if (isProcessingRef.current) {
+            setPendingMessages(prev => [...prev, userText]);
+            // Show queued message in chat immediately
+            const queuedMsg: Message = { role: 'user', text: userText, timestamp: new Date().toISOString() };
+            setMessages(prev => [...prev, queuedMsg]);
+            return;
+        }
+
+        isProcessingRef.current = true;
+        const userMsg: Message = { role: 'user', text: userText, timestamp: new Date().toISOString() };
         setMessages((prev) => [...prev, userMsg]);
         setIsLoading(true);
 
         // Start turn tracking for analytics
         startTurnTracking();
+
 
         try {
             const response = await chatSession.sendMessage({ message: userMsg.text });
@@ -363,13 +400,11 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     await updateSession(sessionId, updatedMessages, newTurnCount);
                 }
 
-                // Trigger Quick Reply questions at specific turns
-                if (newTurnCount === 2 && !quickReplyResponses.ai_frequency) {
-                    setTimeout(() => setCurrentQuickReply(QUICK_REPLY_QUESTIONS[0]), 500);
-                } else if (newTurnCount === 4 && !quickReplyResponses.verification_level) {
-                    setTimeout(() => setCurrentQuickReply(QUICK_REPLY_QUESTIONS[1]), 500);
-                } else if (newTurnCount === 6 && !quickReplyResponses.main_concern) {
-                    setTimeout(() => setCurrentQuickReply(QUICK_REPLY_QUESTIONS[2]), 500);
+                // Trigger Quick Reply based on TINA's response content (keyword matching)
+                const answeredQuestionIds = Object.keys(quickReplyResponses);
+                const matchedQuickReply = detectQuickReply(botMsg.text, answeredQuestionIds);
+                if (matchedQuickReply) {
+                    setTimeout(() => setCurrentQuickReply(matchedQuickReply), 500);
                 }
             }
         } catch (error) {
@@ -377,6 +412,25 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             setMessages((prev) => [...prev, { role: 'model', text: 'Sorry, I encountered an error. Please try again.', timestamp: new Date().toISOString() }]);
         } finally {
             setIsLoading(false);
+            isProcessingRef.current = false;
+
+            // Process any pending messages that were queued while AI was responding
+            if (pendingMessages.length > 0) {
+                const combinedMessage = pendingMessages.join(' ');
+                setPendingMessages([]);
+
+                // Small delay to let state settle, then send combined message
+                setTimeout(() => {
+                    setInput(combinedMessage);
+                    // Trigger send after input is set
+                    setTimeout(() => {
+                        const sendBtn = document.querySelector('.send-button') as HTMLButtonElement;
+                        if (sendBtn && !sendBtn.disabled) {
+                            sendBtn.click();
+                        }
+                    }, 50);
+                }, 100);
+            }
         }
     };
 
@@ -448,13 +502,11 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     setTurnCount(newTurnCount);
                     setMessages(prev => [...prev, botMsg]);
 
-                    // Check if we should show next quick reply question
-                    if (newTurnCount === 2 && !quickReplyResponses.ai_frequency) {
-                        setCurrentQuickReply(QUICK_REPLY_QUESTIONS[0]); // AI frequency
-                    } else if (newTurnCount === 4 && !quickReplyResponses.verification_level) {
-                        setCurrentQuickReply(QUICK_REPLY_QUESTIONS[1]); // Verification level
-                    } else if (newTurnCount === 6 && !quickReplyResponses.main_concern) {
-                        setCurrentQuickReply(QUICK_REPLY_QUESTIONS[2]); // Main concern
+                    // Trigger Quick Reply based on TINA's response content (keyword matching)
+                    const answeredQuestionIds = Object.keys(quickReplyResponses);
+                    const matchedQuickReply = detectQuickReply(botMsg.text, answeredQuestionIds);
+                    if (matchedQuickReply) {
+                        setCurrentQuickReply(matchedQuickReply);
                     }
 
                     setIsLoading(false);
@@ -531,15 +583,14 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder={isRecording ? 'Listening...' : 'Share your thoughts...'}
-                        disabled={isLoading}
+                        placeholder={isRecording ? 'Listening...' : (isLoading ? 'Type to queue your next message...' : 'Share your thoughts...')}
                     />
                     <button
                         className="send-button"
                         onClick={handleSend}
-                        disabled={isLoading || !input.trim()}
+                        disabled={!input.trim()}
                     >
-                        SEND
+                        {isLoading ? 'QUEUE' : 'SEND'}
                     </button>
                 </div>
             </div>
