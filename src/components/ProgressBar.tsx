@@ -13,7 +13,7 @@ export function ProgressBar({ currentTurn, totalTurns = 8 }: ProgressBarProps) {
         <div className="progress-container">
             <div className="progress-info">
                 <span className="progress-label">Session Progress</span>
-                <span className="progress-count">{currentTurn} / {totalTurns} turns</span>
+                <span className="progress-count">Turn {currentTurn}</span>
             </div>
             <div className="progress-bar-track">
                 <div
