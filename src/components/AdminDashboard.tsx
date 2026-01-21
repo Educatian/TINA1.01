@@ -2,12 +2,26 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getAllSessions } from '../hooks/useSession';
-import type { Session, User } from '../types';
+import type { Session, TurnAnalytics } from '../types';
 
 interface UserProfile {
     id: string;
     email: string;
     role: string;
+    created_at: string;
+}
+
+interface SessionAnalyticsRecord {
+    id: string;
+    session_id: string;
+    turn_number: number;
+    sentiment_score: number;
+    sentiment_label: string;
+    engagement_score: number;
+    emotion_label: string;
+    discourse_type: string;
+    self_efficacy_level: string;
+    ai_attitude: string;
     created_at: string;
 }
 
@@ -17,6 +31,9 @@ export function AdminDashboard() {
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'users'>('overview');
+    const [sessionAnalytics, setSessionAnalytics] = useState<SessionAnalyticsRecord[]>([]);
+    const [updatingRole, setUpdatingRole] = useState<string | null>(null);
 
     useEffect(() => {
         const loadData = async () => {
@@ -33,10 +50,43 @@ export function AdminDashboard() {
             if (usersData) {
                 setUsers(usersData);
             }
+
+            // Load session analytics
+            const { data: analyticsData } = await supabase
+                .from('session_analytics')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(500);
+
+            if (analyticsData) {
+                setSessionAnalytics(analyticsData);
+            }
+
             setLoading(false);
         };
         loadData();
     }, []);
+
+    // Toggle admin role for a user
+    const toggleAdminRole = async (userId: string, currentRole: string) => {
+        setUpdatingRole(userId);
+        const newRole = currentRole === 'admin' ? 'user' : 'admin';
+
+        const { error } = await supabase
+            .from('profiles')
+            .update({ role: newRole })
+            .eq('id', userId);
+
+        if (!error) {
+            setUsers(prev => prev.map(u =>
+                u.id === userId ? { ...u, role: newRole } : u
+            ));
+        } else {
+            console.error('Failed to update role:', error);
+            alert('Failed to update role. Check database permissions.');
+        }
+        setUpdatingRole(null);
+    };
 
     // Filter sessions by selected user
     const filteredSessions = selectedUserId
@@ -54,25 +104,29 @@ export function AdminDashboard() {
         completedCount: sessions.filter(s => s.user_id === user.id && s.completed_at).length,
     }));
 
-    // Aggregate keywords for selected user or all
-    const allKeywords = filteredSessions.flatMap(s => [
-        ...(s.layer1_keywords || []),
-        ...(s.layer2_keywords || []),
-        ...(s.layer3_keywords || []),
-    ]);
-    const keywordCounts = allKeywords.reduce((acc, kw) => {
-        acc[kw] = (acc[kw] || 0) + 1;
+    // Aggregate analytics data
+    const avgSentiment = sessionAnalytics.length > 0
+        ? (sessionAnalytics.reduce((sum, a) => sum + (a.sentiment_score || 0), 0) / sessionAnalytics.length).toFixed(2)
+        : '0.00';
+    const avgEngagement = sessionAnalytics.length > 0
+        ? (sessionAnalytics.reduce((sum, a) => sum + (a.engagement_score || 0), 0) / sessionAnalytics.length).toFixed(2)
+        : '0.00';
+
+    // Emotion distribution
+    const emotionCounts = sessionAnalytics.reduce((acc, a) => {
+        if (a.emotion_label) {
+            acc[a.emotion_label] = (acc[a.emotion_label] || 0) + 1;
+        }
         return acc;
     }, {} as Record<string, number>);
-    const topKeywords = Object.entries(keywordCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8);
 
-    // Layer distribution for chart
-    const layer1Count = filteredSessions.flatMap(s => s.layer1_keywords || []).length;
-    const layer2Count = filteredSessions.flatMap(s => s.layer2_keywords || []).length;
-    const layer3Count = filteredSessions.flatMap(s => s.layer3_keywords || []).length;
-    const totalLayerCount = layer1Count + layer2Count + layer3Count || 1;
+    // AI Attitude distribution
+    const attitudeCounts = sessionAnalytics.reduce((acc, a) => {
+        if (a.ai_attitude) {
+            acc[a.ai_attitude] = (acc[a.ai_attitude] || 0) + 1;
+        }
+        return acc;
+    }, {} as Record<string, number>);
 
     const selectedUser = users.find(u => u.id === selectedUserId);
 
@@ -85,320 +139,360 @@ export function AdminDashboard() {
     }
 
     return (
-        <div className="admin-container" style={{ display: 'flex', gap: '24px' }}>
-            {/* User Sidebar */}
+        <div className="admin-container">
+            {/* Tab Navigation */}
             <div style={{
-                width: '280px',
-                flexShrink: 0,
-                background: '#fff',
-                borderRadius: '12px',
-                padding: '20px',
-                boxShadow: '4px 4px 0px rgba(0,0,0,0.05)',
-                border: '2px solid #E5E7EB',
-                height: 'fit-content',
+                display: 'flex',
+                gap: '0',
+                marginBottom: '24px',
+                borderBottom: '2px solid #E5E7EB'
             }}>
-                <h3 style={{ marginBottom: '16px', color: '#52796F', fontSize: '1rem' }}>
-                    👥 Users ({users.length})
-                </h3>
-                <button
-                    onClick={() => setSelectedUserId(null)}
-                    style={{
-                        width: '100%',
-                        padding: '12px',
-                        marginBottom: '8px',
-                        border: selectedUserId === null ? '2px solid #84A98C' : '2px solid #E5E7EB',
-                        borderRadius: '8px',
-                        background: selectedUserId === null ? '#CAD2C5' : '#fff',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        fontWeight: selectedUserId === null ? '600' : 'normal',
-                    }}
-                >
-                    📊 All Users
-                    <span style={{ float: 'right', fontSize: '0.85rem', color: '#6b7280' }}>
-                        {sessions.length} sessions
-                    </span>
-                </button>
+                {[
+                    { id: 'overview', label: '📊 Overview', icon: '📊' },
+                    { id: 'analytics', label: '🧠 NLP Analytics', icon: '🧠' },
+                    { id: 'users', label: '👥 User Management', icon: '👥' },
+                ].map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        style={{
+                            padding: '12px 24px',
+                            border: 'none',
+                            background: activeTab === tab.id ? '#F4D03F' : 'transparent',
+                            color: activeTab === tab.id ? '#2C3E50' : '#6b7280',
+                            fontWeight: activeTab === tab.id ? '600' : 'normal',
+                            cursor: 'pointer',
+                            borderBottom: activeTab === tab.id ? '3px solid #D4AC0D' : '3px solid transparent',
+                            fontSize: '0.95rem',
+                        }}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
 
-                <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                    {userSessionCounts.map(({ user, sessionCount, completedCount }) => (
+            {/* Overview Tab */}
+            {activeTab === 'overview' && (
+                <div style={{ display: 'flex', gap: '24px' }}>
+                    {/* User Sidebar */}
+                    <div style={{
+                        width: '280px',
+                        flexShrink: 0,
+                        background: '#fff',
+                        borderRadius: '12px',
+                        padding: '20px',
+                        boxShadow: '4px 4px 0px rgba(0,0,0,0.05)',
+                        border: '2px solid #E5E7EB',
+                        height: 'fit-content',
+                    }}>
+                        <h3 style={{ marginBottom: '16px', color: '#52796F', fontSize: '1rem' }}>
+                            👥 Users ({users.length})
+                        </h3>
                         <button
-                            key={user.id}
-                            onClick={() => setSelectedUserId(user.id)}
+                            onClick={() => setSelectedUserId(null)}
                             style={{
                                 width: '100%',
                                 padding: '12px',
-                                marginBottom: '4px',
-                                border: selectedUserId === user.id ? '2px solid #84A98C' : '2px solid #E5E7EB',
+                                marginBottom: '8px',
+                                border: selectedUserId === null ? '2px solid #84A98C' : '2px solid #E5E7EB',
                                 borderRadius: '8px',
-                                background: selectedUserId === user.id ? '#CAD2C5' : '#fff',
+                                background: selectedUserId === null ? '#CAD2C5' : '#fff',
                                 cursor: 'pointer',
                                 textAlign: 'left',
-                                fontWeight: selectedUserId === user.id ? '600' : 'normal',
+                                fontWeight: selectedUserId === null ? '600' : 'normal',
                             }}
                         >
-                            <div style={{ fontSize: '0.85rem', marginBottom: '4px' }}>
-                                {user.email}
-                            </div>
-                            <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                                {sessionCount} sessions · {completedCount} completed
-                            </div>
+                            📊 All Users
+                            <span style={{ float: 'right', fontSize: '0.85rem', color: '#6b7280' }}>
+                                {sessions.length} sessions
+                            </span>
                         </button>
-                    ))}
-                </div>
-            </div>
 
-            {/* Main Content */}
-            <div style={{ flex: 1 }}>
-                <div className="admin-header">
-                    <h1>📊 TINA Analytics Dashboard</h1>
-                    <p style={{ color: '#6b7280', marginTop: '8px' }}>
-                        {selectedUser ? `Viewing: ${selectedUser.email}` : 'All users overview'}
-                    </p>
-                </div>
-
-                {/* Stats Grid */}
-                <div className="stats-grid">
-                    <div className="stat-card">
-                        <h3>Sessions</h3>
-                        <div className="value">{filteredSessions.length}</div>
-                    </div>
-                    <div className="stat-card">
-                        <h3>Completed</h3>
-                        <div className="value">{completedSessions.length}</div>
-                    </div>
-                    <div className="stat-card">
-                        <h3>Avg. Turns</h3>
-                        <div className="value">{avgTurns}</div>
-                    </div>
-                    <div className="stat-card">
-                        <h3>Completion Rate</h3>
-                        <div className="value">
-                            {filteredSessions.length > 0
-                                ? Math.round((completedSessions.length / filteredSessions.length) * 100)
-                                : 0}%
-                        </div>
-                    </div>
-                </div>
-
-                {/* Layer Distribution Chart */}
-                <div style={{
-                    background: '#fff',
-                    borderRadius: '12px',
-                    padding: '24px',
-                    marginBottom: '24px',
-                    border: '2px solid #E5E7EB',
-                    boxShadow: '4px 4px 0px rgba(0,0,0,0.05)',
-                }}>
-                    <h3 style={{ marginBottom: '16px', color: '#52796F' }}>🧠 Reflection Layers Distribution</h3>
-                    <div style={{ display: 'flex', gap: '16px', alignItems: 'end', height: '120px' }}>
-                        <div style={{ flex: 1, textAlign: 'center' }}>
-                            <div style={{
-                                height: `${(layer1Count / totalLayerCount) * 100}px`,
-                                background: 'linear-gradient(135deg, #84A98C, #52796F)',
-                                borderRadius: '8px 8px 0 0',
-                                minHeight: '20px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#fff',
-                                fontWeight: 'bold',
-                            }}>
-                                {layer1Count}
-                            </div>
-                            <div style={{ marginTop: '8px', fontSize: '0.85rem', color: '#6b7280' }}>
-                                Layer 1<br />Identity
-                            </div>
-                        </div>
-                        <div style={{ flex: 1, textAlign: 'center' }}>
-                            <div style={{
-                                height: `${(layer2Count / totalLayerCount) * 100}px`,
-                                background: 'linear-gradient(135deg, #E76F51, #D4533B)',
-                                borderRadius: '8px 8px 0 0',
-                                minHeight: '20px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#fff',
-                                fontWeight: 'bold',
-                            }}>
-                                {layer2Count}
-                            </div>
-                            <div style={{ marginTop: '8px', fontSize: '0.85rem', color: '#6b7280' }}>
-                                Layer 2<br />AI Practice
-                            </div>
-                        </div>
-                        <div style={{ flex: 1, textAlign: 'center' }}>
-                            <div style={{
-                                height: `${(layer3Count / totalLayerCount) * 100}px`,
-                                background: 'linear-gradient(135deg, #F4D03F, #C9A227)',
-                                borderRadius: '8px 8px 0 0',
-                                minHeight: '20px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#fff',
-                                fontWeight: 'bold',
-                            }}>
-                                {layer3Count}
-                            </div>
-                            <div style={{ marginTop: '8px', fontSize: '0.85rem', color: '#6b7280' }}>
-                                Layer 3<br />AI & Society
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Top Keywords */}
-                {topKeywords.length > 0 && (
-                    <div style={{
-                        background: '#fff',
-                        borderRadius: '12px',
-                        padding: '24px',
-                        marginBottom: '24px',
-                        border: '2px solid #E5E7EB',
-                        boxShadow: '4px 4px 0px rgba(0,0,0,0.05)',
-                    }}>
-                        <h3 style={{ marginBottom: '16px', color: '#52796F' }}>🏷️ Top Keywords</h3>
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            {topKeywords.map(([keyword, count]) => (
-                                <span
-                                    key={keyword}
+                        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                            {userSessionCounts.map(({ user, sessionCount, completedCount }) => (
+                                <button
+                                    key={user.id}
+                                    onClick={() => setSelectedUserId(user.id)}
                                     style={{
-                                        background: '#CAD2C5',
-                                        color: '#2F3E46',
-                                        padding: '8px 16px',
-                                        borderRadius: '20px',
-                                        fontSize: '0.9rem',
+                                        width: '100%',
+                                        padding: '12px',
+                                        marginBottom: '4px',
+                                        border: selectedUserId === user.id ? '2px solid #84A98C' : '2px solid #E5E7EB',
+                                        borderRadius: '8px',
+                                        background: selectedUserId === user.id ? '#CAD2C5' : '#fff',
+                                        cursor: 'pointer',
+                                        textAlign: 'left',
+                                        fontWeight: selectedUserId === user.id ? '600' : 'normal',
                                     }}
                                 >
-                                    {keyword} ({count})
-                                </span>
+                                    <div style={{ fontSize: '0.85rem', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        {user.email}
+                                        {user.role === 'admin' && (
+                                            <span style={{ background: '#E74C3C', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem' }}>ADMIN</span>
+                                        )}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                                        {sessionCount} sessions · {completedCount} completed
+                                    </div>
+                                </button>
                             ))}
                         </div>
                     </div>
-                )}
 
-                {/* NLP Analytics Section */}
-                <div style={{
-                    background: 'linear-gradient(135deg, #F9E79F 0%, #F4D03F 100%)',
-                    borderRadius: '12px',
-                    padding: '20px',
-                    marginTop: '24px',
-                    marginBottom: '24px',
-                    border: '2px solid #D4AC0D'
-                }}>
-                    <h2 style={{ marginBottom: '16px', color: '#2C3E50', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        🔬 NLP Analytics (Beta)
-                    </h2>
+                    {/* Main Stats Content */}
+                    <div style={{ flex: 1 }}>
+                        <div className="admin-header">
+                            <h1>📊 TINA Analytics Dashboard</h1>
+                            <p style={{ color: '#6b7280', marginTop: '8px' }}>
+                                {selectedUser ? `Viewing: ${selectedUser.email}` : 'All users overview'}
+                            </p>
+                        </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
-                        <div style={{ background: 'white', borderRadius: '8px', padding: '16px', textAlign: 'center' }}>
-                            <div style={{ fontSize: '2rem' }}>😊</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#27AE60' }}>
-                                {(0.65 + Math.random() * 0.2).toFixed(2)}
+                        {/* Stats Grid */}
+                        <div className="stats-grid">
+                            <div className="stat-card">
+                                <h3>Sessions</h3>
+                                <div className="value">{filteredSessions.length}</div>
                             </div>
-                            <div style={{ fontSize: '0.85rem', color: '#7F8C8D' }}>Avg Sentiment</div>
-                        </div>
-                        <div style={{ background: 'white', borderRadius: '8px', padding: '16px', textAlign: 'center' }}>
-                            <div style={{ fontSize: '2rem' }}>📊</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#3498DB' }}>
-                                {(3.5 + Math.random() * 1.5).toFixed(1)}/5
+                            <div className="stat-card">
+                                <h3>Completed</h3>
+                                <div className="value">{completedSessions.length}</div>
                             </div>
-                            <div style={{ fontSize: '0.85rem', color: '#7F8C8D' }}>Discourse Depth</div>
-                        </div>
-                        <div style={{ background: 'white', borderRadius: '8px', padding: '16px', textAlign: 'center' }}>
-                            <div style={{ fontSize: '2rem' }}>🎯</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#9B59B6' }}>
-                                {Math.round(70 + Math.random() * 20)}%
+                            <div className="stat-card">
+                                <h3>Avg. Turns</h3>
+                                <div className="value">{avgTurns}</div>
                             </div>
-                            <div style={{ fontSize: '0.85rem', color: '#7F8C8D' }}>Engagement</div>
+                            <div className="stat-card">
+                                <h3>Completion Rate</h3>
+                                <div className="value">
+                                    {filteredSessions.length > 0
+                                        ? Math.round((completedSessions.length / filteredSessions.length) * 100)
+                                        : 0}%
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div style={{ background: 'white', borderRadius: '8px', padding: '16px' }}>
-                        <h4 style={{ marginBottom: '12px', color: '#2C3E50' }}>📈 Sentiment Over Conversation</h4>
-                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '80px' }}>
-                            {[0.4, 0.5, 0.6, 0.7, 0.65, 0.75, 0.8, 0.7, 0.85, 0.78].map((val, idx) => (
-                                <div
-                                    key={idx}
-                                    style={{
-                                        flex: 1,
-                                        height: `${val * 100}%`,
-                                        background: val > 0.6 ? '#27AE60' : val > 0.4 ? '#F39C12' : '#E74C3C',
-                                        borderRadius: '4px 4px 0 0',
-                                        transition: 'height 0.3s ease'
-                                    }}
-                                    title={`Turn ${idx + 1}: ${(val * 100).toFixed(0)}%`}
-                                />
-                            ))}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '0.75rem', color: '#7F8C8D' }}>
-                            <span>Turn 1</span>
-                            <span>Turn 10</span>
-                        </div>
-                    </div>
-
-                    <p style={{ marginTop: '12px', fontSize: '0.8rem', color: '#5D6D7E', textAlign: 'center' }}>
-                        🔑 Add VITE_HUGGINGFACE_API_KEY to .env.local for live analysis
-                    </p>
-                </div>
-
-                {/* Sessions Table */}
-                <h2 style={{ marginBottom: '16px', color: '#52796F' }}>
-                    📝 {selectedUser ? `${selectedUser.email}'s Sessions` : 'All Sessions'}
-                </h2>
-                <div className="sessions-table">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Turns</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredSessions.length === 0 ? (
-                                <tr>
-                                    <td colSpan={4} style={{ textAlign: 'center', color: '#6b7280' }}>
-                                        No sessions yet
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredSessions.map((session) => (
-                                    <tr key={session.id}>
-                                        <td>
-                                            {new Date(session.created_at).toLocaleDateString('en-US', {
-                                                month: 'short',
-                                                day: 'numeric',
-                                                year: 'numeric',
-                                            })}
-                                        </td>
-                                        <td>{session.turn_count || 0}</td>
-                                        <td>
-                                            <span className={`status-badge ${session.completed_at ? 'status-completed' : 'status-pending'}`}>
-                                                {session.completed_at ? 'Completed' : 'In Progress'}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            {session.completed_at && (
-                                                <button
-                                                    className="btn btn-secondary"
-                                                    style={{ padding: '6px 12px', fontSize: '0.85rem' }}
-                                                    onClick={() => navigate(`/certificate/${session.id}`)}
-                                                >
-                                                    View Report
-                                                </button>
-                                            )}
-                                        </td>
+                        {/* Sessions Table */}
+                        <h2 style={{ marginTop: '24px', marginBottom: '16px', color: '#52796F' }}>
+                            📝 Recent Sessions
+                        </h2>
+                        <div className="sessions-table">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Date</th>
+                                        <th>Turns</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                </thead>
+                                <tbody>
+                                    {filteredSessions.slice(0, 20).map((session) => {
+                                        const user = users.find(u => u.id === session.user_id);
+                                        return (
+                                            <tr key={session.id}>
+                                                <td style={{ fontSize: '0.85rem' }}>{user?.email || 'Unknown'}</td>
+                                                <td>
+                                                    {new Date(session.created_at).toLocaleDateString('en-US', {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                    })}
+                                                </td>
+                                                <td>{session.turn_count || 0}</td>
+                                                <td>
+                                                    <span className={`status-badge ${session.completed_at ? 'status-completed' : 'status-pending'}`}>
+                                                        {session.completed_at ? 'Completed' : 'In Progress'}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    {session.completed_at && (
+                                                        <button
+                                                            className="btn btn-secondary"
+                                                            style={{ padding: '6px 12px', fontSize: '0.85rem' }}
+                                                            onClick={() => navigate(`/certificate/${session.id}`)}
+                                                        >
+                                                            View
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {/* NLP Analytics Tab */}
+            {activeTab === 'analytics' && (
+                <div>
+                    <h1 style={{ marginBottom: '24px' }}>🧠 NLP Analytics from session_analytics</h1>
+
+                    {/* Summary Stats */}
+                    <div className="stats-grid">
+                        <div className="stat-card">
+                            <h3>Total Records</h3>
+                            <div className="value">{sessionAnalytics.length}</div>
+                        </div>
+                        <div className="stat-card">
+                            <h3>Avg Sentiment</h3>
+                            <div className="value" style={{ color: parseFloat(avgSentiment) > 0.5 ? '#27AE60' : '#E74C3C' }}>{avgSentiment}</div>
+                        </div>
+                        <div className="stat-card">
+                            <h3>Avg Engagement</h3>
+                            <div className="value" style={{ color: '#3498DB' }}>{avgEngagement}</div>
+                        </div>
+                        <div className="stat-card">
+                            <h3>Sessions Analyzed</h3>
+                            <div className="value">{new Set(sessionAnalytics.map(a => a.session_id)).size}</div>
+                        </div>
+                    </div>
+
+                    {/* Emotion Distribution */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
+                        <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', border: '2px solid #E5E7EB' }}>
+                            <h3 style={{ marginBottom: '16px' }}>😊 Emotion Distribution</h3>
+                            {Object.entries(emotionCounts).slice(0, 6).map(([emotion, count]) => (
+                                <div key={emotion} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+                                    <span style={{ width: '100px', textTransform: 'capitalize' }}>{emotion}</span>
+                                    <div style={{ flex: 1, background: '#E5E7EB', borderRadius: '4px', height: '20px', marginRight: '8px' }}>
+                                        <div style={{
+                                            width: `${(count / sessionAnalytics.length) * 100}%`,
+                                            background: emotion === 'joy' ? '#27AE60' : emotion === 'sadness' ? '#3498DB' : '#F39C12',
+                                            height: '100%',
+                                            borderRadius: '4px'
+                                        }} />
+                                    </div>
+                                    <span style={{ width: '40px', textAlign: 'right' }}>{count}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', border: '2px solid #E5E7EB' }}>
+                            <h3 style={{ marginBottom: '16px' }}>🤖 AI Attitude Distribution</h3>
+                            {Object.entries(attitudeCounts).slice(0, 4).map(([attitude, count]) => (
+                                <div key={attitude} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+                                    <span style={{ width: '100px', textTransform: 'capitalize' }}>{attitude}</span>
+                                    <div style={{ flex: 1, background: '#E5E7EB', borderRadius: '4px', height: '20px', marginRight: '8px' }}>
+                                        <div style={{
+                                            width: `${(count / sessionAnalytics.length) * 100}%`,
+                                            background: attitude === 'enthusiast' ? '#27AE60' : attitude === 'pragmatist' ? '#3498DB' : '#E74C3C',
+                                            height: '100%',
+                                            borderRadius: '4px'
+                                        }} />
+                                    </div>
+                                    <span style={{ width: '40px', textAlign: 'right' }}>{count}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Raw Data Table */}
+                    <h3 style={{ marginTop: '24px', marginBottom: '16px' }}>📋 Raw Analytics Data (Last 50)</h3>
+                    <div className="sessions-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Turn</th>
+                                    <th>Sentiment</th>
+                                    <th>Engagement</th>
+                                    <th>Emotion</th>
+                                    <th>AI Attitude</th>
+                                    <th>Efficacy</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {sessionAnalytics.slice(0, 50).map((record) => (
+                                    <tr key={record.id}>
+                                        <td>{record.turn_number}</td>
+                                        <td style={{ color: record.sentiment_score > 0.5 ? '#27AE60' : '#E74C3C' }}>
+                                            {record.sentiment_score?.toFixed(2) || '-'}
+                                        </td>
+                                        <td>{record.engagement_score?.toFixed(2) || '-'}</td>
+                                        <td>{record.emotion_label || '-'}</td>
+                                        <td>{record.ai_attitude || '-'}</td>
+                                        <td>{record.self_efficacy_level || '-'}</td>
+                                        <td>{new Date(record.created_at).toLocaleDateString()}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* User Management Tab */}
+            {activeTab === 'users' && (
+                <div>
+                    <h1 style={{ marginBottom: '24px' }}>👥 User Management</h1>
+                    <p style={{ marginBottom: '24px', color: '#6b7280' }}>
+                        Toggle admin status for users. Admins can access this dashboard and view all analytics.
+                    </p>
+
+                    <div className="sessions-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Sessions</th>
+                                    <th>Joined</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {users.map((user) => {
+                                    const sessionCount = sessions.filter(s => s.user_id === user.id).length;
+                                    return (
+                                        <tr key={user.id}>
+                                            <td>{user.email}</td>
+                                            <td>
+                                                <span style={{
+                                                    background: user.role === 'admin' ? '#E74C3C' : '#27AE60',
+                                                    color: 'white',
+                                                    padding: '4px 12px',
+                                                    borderRadius: '20px',
+                                                    fontSize: '0.8rem',
+                                                    fontWeight: '600',
+                                                }}>
+                                                    {user.role?.toUpperCase() || 'USER'}
+                                                </span>
+                                            </td>
+                                            <td>{sessionCount}</td>
+                                            <td>{new Date(user.created_at).toLocaleDateString()}</td>
+                                            <td>
+                                                <button
+                                                    onClick={() => toggleAdminRole(user.id, user.role)}
+                                                    disabled={updatingRole === user.id}
+                                                    style={{
+                                                        padding: '8px 16px',
+                                                        background: user.role === 'admin' ? '#E5E7EB' : '#F4D03F',
+                                                        border: 'none',
+                                                        borderRadius: '8px',
+                                                        cursor: updatingRole === user.id ? 'wait' : 'pointer',
+                                                        fontWeight: '500',
+                                                    }}
+                                                >
+                                                    {updatingRole === user.id
+                                                        ? 'Updating...'
+                                                        : user.role === 'admin'
+                                                            ? 'Remove Admin'
+                                                            : 'Make Admin'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+
