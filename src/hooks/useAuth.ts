@@ -2,6 +2,42 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { User, AuthState } from '../types';
 
+async function buildUser(sessionUser: {
+    id: string;
+    email?: string;
+    created_at?: string;
+    user_metadata?: { role?: string };
+}): Promise<User> {
+    let role: User['role'] = sessionUser.user_metadata?.role === 'admin' ? 'admin' : 'user';
+    let createdAt = sessionUser.created_at || new Date().toISOString();
+    let email = sessionUser.email || '';
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('email, role, created_at')
+        .eq('id', sessionUser.id)
+        .maybeSingle();
+
+    if (profile?.role === 'admin' || profile?.role === 'user') {
+        role = profile.role;
+    }
+
+    if (profile?.created_at) {
+        createdAt = profile.created_at;
+    }
+
+    if (profile?.email) {
+        email = profile.email;
+    }
+
+    return {
+        id: sessionUser.id,
+        email,
+        role,
+        created_at: createdAt,
+    };
+}
+
 export function useAuth() {
     const [authState, setAuthState] = useState<AuthState>({
         user: null,
@@ -16,15 +52,8 @@ export function useAuth() {
                 const { data: { session } } = await supabase.auth.getSession();
 
                 if (session?.user) {
-                    // Use user metadata for role (or default to 'user')
-                    const role = (session.user.user_metadata?.role as string) || 'user';
                     setAuthState({
-                        user: {
-                            id: session.user.id,
-                            email: session.user.email || '',
-                            role: role === 'admin' ? 'admin' : 'user',
-                            created_at: session.user.created_at || new Date().toISOString(),
-                        },
+                        user: await buildUser(session.user),
                         loading: false,
                         error: null,
                     });
@@ -42,14 +71,8 @@ export function useAuth() {
         // Listen for auth changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (session?.user) {
-                const role = (session.user.user_metadata?.role as string) || 'user';
                 setAuthState({
-                    user: {
-                        id: session.user.id,
-                        email: session.user.email || '',
-                        role: role === 'admin' ? 'admin' : 'user',
-                        created_at: session.user.created_at || new Date().toISOString(),
-                    },
+                    user: await buildUser(session.user),
                     loading: false,
                     error: null,
                 });
@@ -72,15 +95,8 @@ export function useAuth() {
         }
 
         if (data.user) {
-            // Check if admin from email (simple approach)
-            const isAdmin = email === 'admin@tina.com';
             setAuthState({
-                user: {
-                    id: data.user.id,
-                    email: data.user.email || email,
-                    role: isAdmin ? 'admin' : 'user',
-                    created_at: new Date().toISOString(),
-                },
+                user: await buildUser(data.user),
                 loading: false,
                 error: null,
             });
@@ -100,24 +116,26 @@ export function useAuth() {
         }
 
         if (data.user) {
-            // Try to create profile (don't fail if it doesn't work)
+            const profilePayload = {
+                id: data.user.id,
+                email,
+                role: 'user',
+            };
+
             try {
-                await supabase.from('profiles').insert({
-                    id: data.user.id,
-                    email: email,
-                    role: 'user',
-                });
+                const { error: profileError } = await supabase
+                    .from('profiles')
+                    .upsert(profilePayload, { onConflict: 'id' });
+
+                if (profileError) {
+                    console.warn('Failed to create profile:', profileError);
+                }
             } catch (e) {
                 console.warn('Failed to create profile:', e);
             }
 
             setAuthState({
-                user: {
-                    id: data.user.id,
-                    email: email,
-                    role: 'user',
-                    created_at: new Date().toISOString(),
-                },
+                user: await buildUser(data.user),
                 loading: false,
                 error: null,
             });
@@ -136,6 +154,6 @@ export function useAuth() {
         signIn,
         signUp,
         signOut,
-        isAdmin: authState.user?.role === 'admin' || authState.user?.email === 'admin@tina.com',
+        isAdmin: authState.user?.role === 'admin',
     };
 }

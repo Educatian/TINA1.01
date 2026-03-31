@@ -13,6 +13,53 @@ export interface Message {
   timestamp?: string;
 }
 
+export type ActivityGoal =
+  | 'reflection'
+  | 'case-analysis'
+  | 'lesson-design'
+  | 'ethics-decision'
+  | 'feedback-revision';
+
+export type LearnerLevel =
+  | 'intro-preservice'
+  | 'mid-program'
+  | 'practicum-ready'
+  | 'graduate';
+
+export type OutputFormat =
+  | 'short-reflection'
+  | 'three-point-action-plan'
+  | 'lesson-idea-draft'
+  | 'case-response-outline'
+  | 'checklist';
+
+export interface ActivityConfig {
+  title: string;
+  courseName: string;
+  moduleLabel: string;
+  topic: string;
+  learnerDescription: string;
+  activityGoal: ActivityGoal;
+  learnerLevel: LearnerLevel;
+  scenario?: string;
+  estimatedMinutes?: number;
+  guidance: {
+    evidenceFirst: boolean;
+    compareAlternatives: boolean;
+    learnerImpact: boolean;
+    ethicsPrivacy: boolean;
+    revisionBeforeWrapUp: boolean;
+  };
+  constraints: {
+    noFullSubmissionDraftFirst: boolean;
+    noOneClickAnswers: boolean;
+    reasoningBeforeConclusion: boolean;
+    conciseResponses: boolean;
+  };
+  outputFormat: OutputFormat;
+  instructorNote?: string;
+}
+
 export type TeacherCluster =
   | 'ethically_aware_hesitant'
   | 'motivated_limited_supported'

@@ -32,16 +32,22 @@ export function markVoiceInputUsed(): void {
 }
 
 // Start tracking a new turn
-export function startTurnTracking(): void {
-    turnStartTime = Date.now();
+export function startTurnTracking(startTime = Date.now()): void {
+    turnStartTime = startTime;
+}
+
+// Capture how long the user took to answer the latest prompt
+export function getTurnResponseTime(): number {
+    return turnStartTime ? Date.now() - turnStartTime : 0;
 }
 
 // Analyze a user message and create turn analytics
 export async function analyzeUserTurn(
     turnNumber: number,
-    userMessage: string
+    userMessage: string,
+    responseTimeMsOverride?: number
 ): Promise<TurnAnalytics> {
-    const responseTimeMs = turnStartTime ? Date.now() - turnStartTime : 0;
+    const responseTimeMs = responseTimeMsOverride ?? getTurnResponseTime();
     const messageLower = userMessage.toLowerCase();
 
     // Sentiment analysis

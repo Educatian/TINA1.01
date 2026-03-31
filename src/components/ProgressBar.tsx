@@ -5,7 +5,7 @@ interface ProgressBarProps {
     totalTurns?: number;
 }
 
-export function ProgressBar({ currentTurn, totalTurns = 8 }: ProgressBarProps) {
+export function ProgressBar({ currentTurn, totalTurns = 12 }: ProgressBarProps) {
     const progress = Math.min((currentTurn / totalTurns) * 100, 100);
     const isNearEnd = currentTurn >= totalTurns - 2;
 

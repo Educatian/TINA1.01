@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getAllSessions } from '../hooks/useSession';
-import type { Session, TurnAnalytics } from '../types';
+import { loadActivityConfig } from '../services/activityConfig';
+import { ActivityConfigForm } from './ActivityConfigForm';
+import type { ActivityConfig, Session } from '../types';
 
 interface UserProfile {
     id: string;
@@ -25,23 +27,24 @@ interface SessionAnalyticsRecord {
     created_at: string;
 }
 
+type DashboardTab = 'activity' | 'overview' | 'analytics' | 'users';
+
 export function AdminDashboard() {
     const navigate = useNavigate();
     const [sessions, setSessions] = useState<Session[]>([]);
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'users'>('overview');
+    const [activeTab, setActiveTab] = useState<DashboardTab>('activity');
     const [sessionAnalytics, setSessionAnalytics] = useState<SessionAnalyticsRecord[]>([]);
     const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+    const [activityConfig, setActivityConfig] = useState<ActivityConfig>(() => loadActivityConfig());
 
     useEffect(() => {
         const loadData = async () => {
-            // Load sessions
             const sessionsData = await getAllSessions();
             setSessions(sessionsData);
 
-            // Load users from profiles
             const { data: usersData } = await supabase
                 .from('profiles')
                 .select('*')
@@ -51,7 +54,6 @@ export function AdminDashboard() {
                 setUsers(usersData);
             }
 
-            // Load session analytics
             const { data: analyticsData } = await supabase
                 .from('session_analytics')
                 .select('*')
@@ -64,10 +66,10 @@ export function AdminDashboard() {
 
             setLoading(false);
         };
+
         loadData();
     }, []);
 
-    // Toggle admin role for a user
     const toggleAdminRole = async (userId: string, currentRole: string) => {
         setUpdatingRole(userId);
         const newRole = currentRole === 'admin' ? 'user' : 'admin';
@@ -78,33 +80,31 @@ export function AdminDashboard() {
             .eq('id', userId);
 
         if (!error) {
-            setUsers(prev => prev.map(u =>
+            setUsers(prev => prev.map(u => (
                 u.id === userId ? { ...u, role: newRole } : u
-            ));
+            )));
         } else {
             console.error('Failed to update role:', error);
             alert('Failed to update role. Check database permissions.');
         }
+
         setUpdatingRole(null);
     };
 
-    // Filter sessions by selected user
     const filteredSessions = selectedUserId
         ? sessions.filter(s => s.user_id === selectedUserId)
         : sessions;
 
     const completedSessions = filteredSessions.filter(s => s.completed_at);
     const totalTurns = filteredSessions.reduce((sum, s) => sum + (s.turn_count || 0), 0);
-    const avgTurns = filteredSessions.length > 0 ? (totalTurns / filteredSessions.length).toFixed(1) : 0;
+    const avgTurns = filteredSessions.length > 0 ? (totalTurns / filteredSessions.length).toFixed(1) : '0.0';
 
-    // Get user session counts
     const userSessionCounts = users.map(user => ({
         user,
         sessionCount: sessions.filter(s => s.user_id === user.id).length,
         completedCount: sessions.filter(s => s.user_id === user.id && s.completed_at).length,
     }));
 
-    // Aggregate analytics data
     const avgSentiment = sessionAnalytics.length > 0
         ? (sessionAnalytics.reduce((sum, a) => sum + (a.sentiment_score || 0), 0) / sessionAnalytics.length).toFixed(2)
         : '0.00';
@@ -112,18 +112,16 @@ export function AdminDashboard() {
         ? (sessionAnalytics.reduce((sum, a) => sum + (a.engagement_score || 0), 0) / sessionAnalytics.length).toFixed(2)
         : '0.00';
 
-    // Emotion distribution
-    const emotionCounts = sessionAnalytics.reduce((acc, a) => {
-        if (a.emotion_label) {
-            acc[a.emotion_label] = (acc[a.emotion_label] || 0) + 1;
+    const emotionCounts = sessionAnalytics.reduce((acc, record) => {
+        if (record.emotion_label) {
+            acc[record.emotion_label] = (acc[record.emotion_label] || 0) + 1;
         }
         return acc;
     }, {} as Record<string, number>);
 
-    // AI Attitude distribution
-    const attitudeCounts = sessionAnalytics.reduce((acc, a) => {
-        if (a.ai_attitude) {
-            acc[a.ai_attitude] = (acc[a.ai_attitude] || 0) + 1;
+    const attitudeCounts = sessionAnalytics.reduce((acc, record) => {
+        if (record.ai_attitude) {
+            acc[record.ai_attitude] = (acc[record.ai_attitude] || 0) + 1;
         }
         return acc;
     }, {} as Record<string, number>);
@@ -138,23 +136,26 @@ export function AdminDashboard() {
         );
     }
 
+    const tabs: Array<{ id: DashboardTab; label: string }> = [
+        { id: 'activity', label: 'Shared Activity Setup' },
+        { id: 'overview', label: 'Overview' },
+        { id: 'analytics', label: 'NLP Analytics' },
+        { id: 'users', label: 'User Management' },
+    ];
+
     return (
         <div className="admin-container">
-            {/* Tab Navigation */}
             <div style={{
                 display: 'flex',
                 gap: '0',
                 marginBottom: '24px',
-                borderBottom: '2px solid #E5E7EB'
+                borderBottom: '2px solid #E5E7EB',
+                flexWrap: 'wrap',
             }}>
-                {[
-                    { id: 'overview', label: '📊 Overview', icon: '📊' },
-                    { id: 'analytics', label: '🧠 NLP Analytics', icon: '🧠' },
-                    { id: 'users', label: '👥 User Management', icon: '👥' },
-                ].map(tab => (
+                {tabs.map(tab => (
                     <button
                         key={tab.id}
-                        onClick={() => setActiveTab(tab.id as any)}
+                        onClick={() => setActiveTab(tab.id)}
                         style={{
                             padding: '12px 24px',
                             border: 'none',
@@ -171,10 +172,24 @@ export function AdminDashboard() {
                 ))}
             </div>
 
-            {/* Overview Tab */}
+            {activeTab === 'activity' && (
+                <div>
+                    <div className="admin-header">
+                        <h1>Shared Activity Customization</h1>
+                        <p style={{ color: '#6b7280', marginTop: '8px' }}>
+                            Keep one shared TINA chatbot and customize only the learning activity context shown to learners.
+                        </p>
+                    </div>
+
+                    <ActivityConfigForm
+                        initialConfig={activityConfig}
+                        onSave={setActivityConfig}
+                    />
+                </div>
+            )}
+
             {activeTab === 'overview' && (
                 <div style={{ display: 'flex', gap: '24px' }}>
-                    {/* User Sidebar */}
                     <div style={{
                         width: '280px',
                         flexShrink: 0,
@@ -186,7 +201,7 @@ export function AdminDashboard() {
                         height: 'fit-content',
                     }}>
                         <h3 style={{ marginBottom: '16px', color: '#52796F', fontSize: '1rem' }}>
-                            👥 Users ({users.length})
+                            Users ({users.length})
                         </h3>
                         <button
                             onClick={() => setSelectedUserId(null)}
@@ -202,7 +217,7 @@ export function AdminDashboard() {
                                 fontWeight: selectedUserId === null ? '600' : 'normal',
                             }}
                         >
-                            📊 All Users
+                            All Users
                             <span style={{ float: 'right', fontSize: '0.85rem', color: '#6b7280' }}>
                                 {sessions.length} sessions
                             </span>
@@ -239,16 +254,14 @@ export function AdminDashboard() {
                         </div>
                     </div>
 
-                    {/* Main Stats Content */}
                     <div style={{ flex: 1 }}>
                         <div className="admin-header">
-                            <h1>📊 TINA Analytics Dashboard</h1>
+                            <h1>TINA Analytics Dashboard</h1>
                             <p style={{ color: '#6b7280', marginTop: '8px' }}>
                                 {selectedUser ? `Viewing: ${selectedUser.email}` : 'All users overview'}
                             </p>
                         </div>
 
-                        {/* Stats Grid */}
                         <div className="stats-grid">
                             <div className="stat-card">
                                 <h3>Sessions</h3>
@@ -272,9 +285,8 @@ export function AdminDashboard() {
                             </div>
                         </div>
 
-                        {/* Sessions Table */}
                         <h2 style={{ marginTop: '24px', marginBottom: '16px', color: '#52796F' }}>
-                            📝 Recent Sessions
+                            Recent Sessions
                         </h2>
                         <div className="sessions-table">
                             <table>
@@ -289,10 +301,10 @@ export function AdminDashboard() {
                                 </thead>
                                 <tbody>
                                     {filteredSessions.slice(0, 20).map((session) => {
-                                        const user = users.find(u => u.id === session.user_id);
+                                        const sessionUser = users.find(u => u.id === session.user_id);
                                         return (
                                             <tr key={session.id}>
-                                                <td style={{ fontSize: '0.85rem' }}>{user?.email || 'Unknown'}</td>
+                                                <td style={{ fontSize: '0.85rem' }}>{sessionUser?.email || 'Unknown'}</td>
                                                 <td>
                                                     {new Date(session.created_at).toLocaleDateString('en-US', {
                                                         month: 'short',
@@ -326,12 +338,10 @@ export function AdminDashboard() {
                 </div>
             )}
 
-            {/* NLP Analytics Tab */}
             {activeTab === 'analytics' && (
                 <div>
-                    <h1 style={{ marginBottom: '24px' }}>🧠 NLP Analytics from session_analytics</h1>
+                    <h1 style={{ marginBottom: '24px' }}>NLP Analytics from session_analytics</h1>
 
-                    {/* Summary Stats */}
                     <div className="stats-grid">
                         <div className="stat-card">
                             <h3>Total Records</h3>
@@ -351,10 +361,9 @@ export function AdminDashboard() {
                         </div>
                     </div>
 
-                    {/* Emotion Distribution */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
                         <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', border: '2px solid #E5E7EB' }}>
-                            <h3 style={{ marginBottom: '16px' }}>😊 Emotion Distribution</h3>
+                            <h3 style={{ marginBottom: '16px' }}>Emotion Distribution</h3>
                             {Object.entries(emotionCounts).slice(0, 6).map(([emotion, count]) => (
                                 <div key={emotion} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
                                     <span style={{ width: '100px', textTransform: 'capitalize' }}>{emotion}</span>
@@ -363,7 +372,7 @@ export function AdminDashboard() {
                                             width: `${(count / sessionAnalytics.length) * 100}%`,
                                             background: emotion === 'joy' ? '#27AE60' : emotion === 'sadness' ? '#3498DB' : '#F39C12',
                                             height: '100%',
-                                            borderRadius: '4px'
+                                            borderRadius: '4px',
                                         }} />
                                     </div>
                                     <span style={{ width: '40px', textAlign: 'right' }}>{count}</span>
@@ -372,7 +381,7 @@ export function AdminDashboard() {
                         </div>
 
                         <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', border: '2px solid #E5E7EB' }}>
-                            <h3 style={{ marginBottom: '16px' }}>🤖 AI Attitude Distribution</h3>
+                            <h3 style={{ marginBottom: '16px' }}>AI Attitude Distribution</h3>
                             {Object.entries(attitudeCounts).slice(0, 4).map(([attitude, count]) => (
                                 <div key={attitude} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
                                     <span style={{ width: '100px', textTransform: 'capitalize' }}>{attitude}</span>
@@ -381,7 +390,7 @@ export function AdminDashboard() {
                                             width: `${(count / sessionAnalytics.length) * 100}%`,
                                             background: attitude === 'enthusiast' ? '#27AE60' : attitude === 'pragmatist' ? '#3498DB' : '#E74C3C',
                                             height: '100%',
-                                            borderRadius: '4px'
+                                            borderRadius: '4px',
                                         }} />
                                     </div>
                                     <span style={{ width: '40px', textAlign: 'right' }}>{count}</span>
@@ -390,8 +399,7 @@ export function AdminDashboard() {
                         </div>
                     </div>
 
-                    {/* Raw Data Table */}
-                    <h3 style={{ marginTop: '24px', marginBottom: '16px' }}>📋 Raw Analytics Data (Last 50)</h3>
+                    <h3 style={{ marginTop: '24px', marginBottom: '16px' }}>Raw Analytics Data (Last 50)</h3>
                     <div className="sessions-table">
                         <table>
                             <thead>
@@ -425,12 +433,11 @@ export function AdminDashboard() {
                 </div>
             )}
 
-            {/* User Management Tab */}
             {activeTab === 'users' && (
                 <div>
-                    <h1 style={{ marginBottom: '24px' }}>👥 User Management</h1>
+                    <h1 style={{ marginBottom: '24px' }}>User Management</h1>
                     <p style={{ marginBottom: '24px', color: '#6b7280' }}>
-                        Toggle admin status for users. Admins can access this dashboard and view all analytics.
+                        Toggle admin status for users. Admins can access the dashboard and update shared activity settings.
                     </p>
 
                     <div className="sessions-table">
@@ -445,41 +452,41 @@ export function AdminDashboard() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {users.map((user) => {
-                                    const sessionCount = sessions.filter(s => s.user_id === user.id).length;
+                                {users.map((dashboardUser) => {
+                                    const sessionCount = sessions.filter(s => s.user_id === dashboardUser.id).length;
                                     return (
-                                        <tr key={user.id}>
-                                            <td>{user.email}</td>
+                                        <tr key={dashboardUser.id}>
+                                            <td>{dashboardUser.email}</td>
                                             <td>
                                                 <span style={{
-                                                    background: user.role === 'admin' ? '#E74C3C' : '#27AE60',
+                                                    background: dashboardUser.role === 'admin' ? '#E74C3C' : '#27AE60',
                                                     color: 'white',
                                                     padding: '4px 12px',
                                                     borderRadius: '20px',
                                                     fontSize: '0.8rem',
                                                     fontWeight: '600',
                                                 }}>
-                                                    {user.role?.toUpperCase() || 'USER'}
+                                                    {dashboardUser.role?.toUpperCase() || 'USER'}
                                                 </span>
                                             </td>
                                             <td>{sessionCount}</td>
-                                            <td>{new Date(user.created_at).toLocaleDateString()}</td>
+                                            <td>{new Date(dashboardUser.created_at).toLocaleDateString()}</td>
                                             <td>
                                                 <button
-                                                    onClick={() => toggleAdminRole(user.id, user.role)}
-                                                    disabled={updatingRole === user.id}
+                                                    onClick={() => toggleAdminRole(dashboardUser.id, dashboardUser.role)}
+                                                    disabled={updatingRole === dashboardUser.id}
                                                     style={{
                                                         padding: '8px 16px',
-                                                        background: user.role === 'admin' ? '#E5E7EB' : '#F4D03F',
+                                                        background: dashboardUser.role === 'admin' ? '#E5E7EB' : '#F4D03F',
                                                         border: 'none',
                                                         borderRadius: '8px',
-                                                        cursor: updatingRole === user.id ? 'wait' : 'pointer',
+                                                        cursor: updatingRole === dashboardUser.id ? 'wait' : 'pointer',
                                                         fontWeight: '500',
                                                     }}
                                                 >
-                                                    {updatingRole === user.id
+                                                    {updatingRole === dashboardUser.id
                                                         ? 'Updating...'
-                                                        : user.role === 'admin'
+                                                        : dashboardUser.role === 'admin'
                                                             ? 'Remove Admin'
                                                             : 'Make Admin'}
                                                 </button>
@@ -495,4 +502,3 @@ export function AdminDashboard() {
         </div>
     );
 }
-

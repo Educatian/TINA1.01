@@ -7,15 +7,21 @@ import { classifyTeacherCluster } from '../services/nlpService';
 import {
     initSessionTracking,
     startTurnTracking,
+    getTurnResponseTime,
     analyzeUserTurn,
     saveTurnAnalytics,
     saveSessionAnalytics,
     markVoiceInputUsed
 } from '../services/analyticsService';
+import {
+    buildActivitySystemInstruction,
+    loadActivityConfig,
+} from '../services/activityConfig';
 import { ReportModal } from './ReportModal';
 import { QuickReply, QuickReplyQuestion, detectQuickReply } from './QuickReply';
 import { ProgressBar } from './ProgressBar';
-import type { Message, Session } from '../types';
+import { ActivityContextHeader } from './ActivityContextHeader';
+import type { ActivityConfig, Message, Session } from '../types';
 
 // Enhanced TINA System Prompt with Critical Thinking
 const SYSTEM_INSTRUCTION = `
@@ -134,6 +140,8 @@ Q3:
 Start with Orientation now.
 `;
 
+const MAX_TURNS = 12;
+
 interface ChatInterfaceProps {
     onSessionComplete: (sessionId: string) => void;
 }
@@ -142,6 +150,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const { user } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+    const [activityConfig, setActivityConfig] = useState<ActivityConfig>(() => loadActivityConfig());
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -154,16 +163,50 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     // Quick Reply state
     const [currentQuickReply, setCurrentQuickReply] = useState<QuickReplyQuestion | null>(null);
     const [quickReplyResponses, setQuickReplyResponses] = useState<Record<string, string>>({});
-    // Message queue for when AI is processing
-    const [pendingMessages, setPendingMessages] = useState<string[]>([]);
+    const [queuedCount, setQueuedCount] = useState(0);
     const isProcessingRef = useRef(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const recognitionRef = useRef<any>(null);
     const hasInitialized = useRef(false);
+    const messagesRef = useRef<Message[]>([]);
+    const turnCountRef = useRef(0);
+    const sessionIdRef = useRef<string | null>(null);
+    const quickReplyResponsesRef = useRef<Record<string, string>>({});
+    const queuedMessagesRef = useRef<string[]>([]);
 
     // Check for resume session from navigation state
     const resumeSession = (location.state as any)?.resumeSession as Session | undefined;
+
+    useEffect(() => {
+        messagesRef.current = messages;
+    }, [messages]);
+
+    useEffect(() => {
+        turnCountRef.current = turnCount;
+    }, [turnCount]);
+
+    useEffect(() => {
+        sessionIdRef.current = sessionId;
+    }, [sessionId]);
+
+    useEffect(() => {
+        quickReplyResponsesRef.current = quickReplyResponses;
+    }, [quickReplyResponses]);
+
+    useEffect(() => {
+        const syncActivityConfig = () => {
+            setActivityConfig(loadActivityConfig());
+        };
+
+        window.addEventListener('storage', syncActivityConfig);
+        window.addEventListener('activity-config-updated', syncActivityConfig as EventListener);
+
+        return () => {
+            window.removeEventListener('storage', syncActivityConfig);
+            window.removeEventListener('activity-config-updated', syncActivityConfig as EventListener);
+        };
+    }, []);
 
     // Initialize Chat Session
     useEffect(() => {
@@ -172,17 +215,20 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
         const initChat = async () => {
             try {
+                const currentActivityConfig = loadActivityConfig();
+                setActivityConfig(currentActivityConfig);
+
                 // Check if resuming a session
                 if (resumeSession) {
-                    setSessionId(resumeSession.id);
+                    setSessionIdState(resumeSession.id);
                     const existingMessages = resumeSession.messages as Message[] || [];
-                    setMessages(existingMessages);
-                    setTurnCount(resumeSession.turn_count || 0);
+                    replaceMessages(existingMessages);
+                    setTurnCountState(resumeSession.turn_count || 0);
 
                     // Initialize AI with history context - use same API key access as new session
                     const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.API_KEY || '';
                     if (!apiKey) {
-                        setMessages([...existingMessages, {
+                        replaceMessages([...existingMessages, {
                             role: 'model',
                             text: 'Error: API key not found. Please check your environment configuration.',
                             timestamp: new Date().toISOString()
@@ -198,13 +244,17 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     const chat = ai.chats.create({
                         model: 'gemini-2.5-flash',
                         config: {
-                            systemInstruction: SYSTEM_INSTRUCTION + `\n\nPREVIOUS CONVERSATION CONTEXT:\n${historyContext}\n\nContinue the conversation naturally from where we left off.`,
+                            systemInstruction: buildActivitySystemInstruction(
+                                SYSTEM_INSTRUCTION,
+                                currentActivityConfig,
+                            ) + `\n\nPREVIOUS CONVERSATION CONTEXT:\n${historyContext}\n\nContinue the conversation naturally from where we left off.`,
                         },
                     });
                     setChatSession(chat);
 
                     // Re-initialize analytics tracking for resumed session
                     initSessionTracking();
+                    startTurnTracking();
 
                     // Clear the navigation state
                     navigate('/', { replace: true, state: {} });
@@ -214,7 +264,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 // Create new session in Supabase
                 const newSessionId = await createSession(user.id);
                 if (newSessionId) {
-                    setSessionId(newSessionId);
+                    setSessionIdState(newSessionId);
                     // Initialize analytics tracking
                     initSessionTracking();
                 }
@@ -223,7 +273,10 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 const chat = ai.chats.create({
                     model: 'gemini-2.5-flash',
                     config: {
-                        systemInstruction: SYSTEM_INSTRUCTION,
+                        systemInstruction: buildActivitySystemInstruction(
+                            SYSTEM_INSTRUCTION,
+                            currentActivityConfig,
+                        ),
                     },
                 });
                 setChatSession(chat);
@@ -231,8 +284,9 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 setIsLoading(true);
                 const response = await chat.sendMessage({ message: 'Start the session.' });
                 const botMsg: Message = { role: 'model', text: response.text || '', timestamp: new Date().toISOString() };
-                setMessages([botMsg]);
-                setTurnCount(1);
+                replaceMessages([botMsg]);
+                setTurnCountState(1);
+                startTurnTracking();
 
                 // Save initial message to database
                 if (newSessionId) {
@@ -281,12 +335,173 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
+    const replaceMessages = (nextMessages: Message[]) => {
+        messagesRef.current = nextMessages;
+        setMessages(nextMessages);
+    };
+
+    const appendMessages = (...nextMessages: Message[]) => {
+        const updatedMessages = [...messagesRef.current, ...nextMessages];
+        messagesRef.current = updatedMessages;
+        setMessages(updatedMessages);
+        return updatedMessages;
+    };
+
+    const setTurnCountState = (nextTurnCount: number) => {
+        turnCountRef.current = nextTurnCount;
+        setTurnCount(nextTurnCount);
+    };
+
+    const setSessionIdState = (nextSessionId: string | null) => {
+        sessionIdRef.current = nextSessionId;
+        setSessionId(nextSessionId);
+    };
+
+    const setQuickReplyResponsesState = (updater: (prev: Record<string, string>) => Record<string, string>) => {
+        const nextResponses = updater(quickReplyResponsesRef.current);
+        quickReplyResponsesRef.current = nextResponses;
+        setQuickReplyResponses(nextResponses);
+    };
+
     // Save to Supabase when messages change
     useEffect(() => {
         if (sessionId && messages.length > 0) {
             updateSession(sessionId, messages, turnCount);
         }
     }, [messages, sessionId, turnCount]);
+
+    const processNextQueuedMessage = () => {
+        if (isProcessingRef.current) return;
+
+        const nextMessage = queuedMessagesRef.current.shift();
+        setQueuedCount(queuedMessagesRef.current.length);
+
+        if (nextMessage) {
+            void processUserMessage(nextMessage);
+        }
+    };
+
+    const processUserMessage = async (userText: string) => {
+        if (!chatSession) return;
+
+        isProcessingRef.current = true;
+        setIsLoading(true);
+        setCurrentQuickReply(null);
+
+        const userMsg: Message = {
+            role: 'user',
+            text: userText,
+            timestamp: new Date().toISOString()
+        };
+        appendMessages(userMsg);
+
+        const newTurnCount = turnCountRef.current + 1;
+        const userResponseTimeMs = getTurnResponseTime();
+
+        try {
+            const response = await chatSession.sendMessage({ message: userMsg.text });
+            const botMsg: Message = {
+                role: 'model',
+                text: response.text || '',
+                timestamp: new Date().toISOString()
+            };
+
+            setTurnCountState(newTurnCount);
+
+            if (sessionIdRef.current) {
+                try {
+                    const turnAnalytics = await analyzeUserTurn(newTurnCount, userMsg.text, userResponseTimeMs);
+                    await saveTurnAnalytics(sessionIdRef.current, turnAnalytics);
+                } catch (analyticsErr) {
+                    console.warn('Analytics failed (non-blocking):', analyticsErr);
+                }
+            }
+
+            const reportPatterns = [
+                'TINA Reflection Report',
+                'Reflection Report',
+                '**1) Teacher Identity',
+                '**2) Core Values',
+                'Integrated Insight',
+                'Practical Next Step'
+            ];
+            const isReportTurn = reportPatterns.some(pattern => botMsg.text.includes(pattern)) || newTurnCount >= MAX_TURNS;
+
+            if (isReportTurn && sessionIdRef.current) {
+                const persistedMessages = [...messagesRef.current, botMsg];
+                const completionMsg: Message = {
+                    role: 'model',
+                    text: 'Thank you for this meaningful conversation. Your personalized reflection report is ready.',
+                    timestamp: new Date().toISOString()
+                };
+
+                replaceMessages([...messagesRef.current, completionMsg]);
+
+                await updateSession(sessionIdRef.current, persistedMessages, newTurnCount);
+
+                const layer1Keywords = ['values', 'identity', 'role', 'teacher'];
+                const layer2Keywords = ['AI', 'practice', 'tools', 'usage'];
+                const layer3Keywords = ['society', 'ethics', 'fairness', 'policy'];
+
+                let clusterResult;
+                try {
+                    clusterResult = await classifyTeacherCluster(persistedMessages);
+                } catch (err) {
+                    console.error('Cluster classification failed:', err);
+                }
+
+                await completeSession(sessionIdRef.current, botMsg.text, {
+                    layer1: layer1Keywords,
+                    layer2: layer2Keywords,
+                    layer3: layer3Keywords,
+                }, clusterResult);
+
+                await saveSessionAnalytics(sessionIdRef.current, 'completed');
+
+                const sessionData = await getSession(sessionIdRef.current);
+                if (sessionData) {
+                    setCompletedSession(sessionData);
+                    setShowReportModal(true);
+                }
+            } else {
+                const updatedMessages = appendMessages(botMsg);
+
+                if (sessionIdRef.current) {
+                    await updateSession(sessionIdRef.current, updatedMessages, newTurnCount);
+                }
+
+                const answeredQuestionIds = Object.keys(quickReplyResponsesRef.current);
+                const matchedQuickReply = detectQuickReply(botMsg.text, answeredQuestionIds);
+                setCurrentQuickReply(matchedQuickReply);
+                startTurnTracking();
+            }
+        } catch (error) {
+            console.error('Error sending message:', error);
+            appendMessages({
+                role: 'model',
+                text: 'Sorry, I encountered an error. Please try again.',
+                timestamp: new Date().toISOString()
+            });
+            startTurnTracking();
+        } finally {
+            setIsLoading(false);
+            isProcessingRef.current = false;
+            processNextQueuedMessage();
+        }
+    };
+
+    const queueOrSendMessage = (userText: string) => {
+        const trimmedText = userText.trim();
+        if (!trimmedText || !chatSession) return;
+
+        if (isProcessingRef.current) {
+            queuedMessagesRef.current.push(trimmedText);
+            setQueuedCount(queuedMessagesRef.current.length);
+            return;
+        }
+
+        void processUserMessage(trimmedText);
+    };
 
     const handleSend = async () => {
         if (!input.trim() || !chatSession) return;
@@ -298,142 +513,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
         const userText = input.trim();
         setInput('');
-
-        // If AI is currently processing, add to queue instead of sending immediately
-        if (isProcessingRef.current) {
-            setPendingMessages(prev => [...prev, userText]);
-            // Show queued message in chat immediately
-            const queuedMsg: Message = { role: 'user', text: userText, timestamp: new Date().toISOString() };
-            setMessages(prev => [...prev, queuedMsg]);
-            return;
-        }
-
-        isProcessingRef.current = true;
-        const userMsg: Message = { role: 'user', text: userText, timestamp: new Date().toISOString() };
-        setMessages((prev) => [...prev, userMsg]);
-        setIsLoading(true);
-
-        // Start turn tracking for analytics
-        startTurnTracking();
-
-
-        try {
-            const response = await chatSession.sendMessage({ message: userMsg.text });
-            const botMsg: Message = { role: 'model', text: response.text || '', timestamp: new Date().toISOString() };
-
-            const newTurnCount = turnCount + 1;
-            setTurnCount(newTurnCount);
-
-            // Analyze this turn for affect-aware analytics
-            if (sessionId) {
-                try {
-                    const turnAnalytics = await analyzeUserTurn(newTurnCount, userMsg.text);
-                    await saveTurnAnalytics(sessionId, turnAnalytics);
-                    console.log('Turn analytics saved:', turnAnalytics);
-                } catch (analyticsErr) {
-                    console.warn('Analytics failed (non-blocking):', analyticsErr);
-                }
-            }
-
-            // Check if session should end (20 turns or any report variation detected)
-            const reportPatterns = [
-                'TINA Reflection Report',
-                'Reflection Report',
-                '**1) Teacher Identity',
-                '**2) Core Values',
-                'Integrated Insight',
-                'Practical Next Step'
-            ];
-            const isReportTurn = reportPatterns.some(pattern => botMsg.text.includes(pattern)) || newTurnCount >= 20;
-
-            if (isReportTurn && sessionId) {
-                // Don't show report in chat - show completion message instead
-                const completionMsg: Message = {
-                    role: 'model',
-                    text: '✨ Thank you for this meaningful conversation! Your personalized reflection report is ready.',
-                    timestamp: new Date().toISOString()
-                };
-                const allMessages = [...messages, userMsg, completionMsg];
-                setMessages(allMessages);
-
-                // Save all messages to database before completing
-                await updateSession(sessionId, [...messages, userMsg, botMsg], newTurnCount);
-
-                // Extract keywords (simplified)
-                const layer1Keywords = ['values', 'identity', 'role', 'teacher'];
-                const layer2Keywords = ['AI', 'practice', 'tools', 'usage'];
-                const layer3Keywords = ['society', 'ethics', 'fairness', 'policy'];
-
-                // Classify teacher into cluster using NLP
-                let clusterResult;
-                try {
-                    clusterResult = await classifyTeacherCluster([...messages, userMsg]);
-                    console.log('Teacher cluster classification:', clusterResult);
-                } catch (err) {
-                    console.error('Cluster classification failed:', err);
-                }
-
-                await completeSession(sessionId, botMsg.text, {
-                    layer1: layer1Keywords,
-                    layer2: layer2Keywords,
-                    layer3: layer3Keywords,
-                }, clusterResult);
-
-                // Save session analytics
-                await saveSessionAnalytics(sessionId, 'completed');
-
-                // Get completed session data and show modal immediately
-                setTimeout(async () => {
-                    const sessionData = await getSession(sessionId);
-                    if (sessionData) {
-                        setCompletedSession(sessionData);
-                        setShowReportModal(true);
-                    }
-                }, 500);
-            } else {
-                // Normal message - add to chat and save to database
-                const updatedMessages = [...messages, userMsg, botMsg];
-                setMessages(updatedMessages);
-
-                // Save messages to database after each turn
-                if (sessionId) {
-                    await updateSession(sessionId, updatedMessages, newTurnCount);
-                }
-
-                // Trigger Quick Reply based on TINA's response content (keyword matching)
-                const answeredQuestionIds = Object.keys(quickReplyResponses);
-                const matchedQuickReply = detectQuickReply(botMsg.text, answeredQuestionIds);
-                if (matchedQuickReply) {
-                    setTimeout(() => setCurrentQuickReply(matchedQuickReply), 500);
-                }
-            }
-        } catch (error) {
-            console.error('Error sending message:', error);
-            setMessages((prev) => [...prev, { role: 'model', text: 'Sorry, I encountered an error. Please try again.', timestamp: new Date().toISOString() }]);
-        } finally {
-            setIsLoading(false);
-            isProcessingRef.current = false;
-
-            // Process any pending messages that were queued while AI was responding
-            if (pendingMessages.length > 0) {
-                const combinedMessage = pendingMessages.join(' ');
-                setPendingMessages([]);
-
-                // Small delay to let state settle, then send combined message
-                setTimeout(() => {
-                    setInput(combinedMessage);
-                    // Trigger send after input is set
-                    setTimeout(() => {
-                        const sendBtn = document.querySelector('.send-button') as HTMLButtonElement;
-                        if (sendBtn && !sendBtn.disabled) {
-                            sendBtn.click();
-                        }
-                    }, 50);
-                }, 100);
-            }
-        }
+        queueOrSendMessage(userText);
     };
-
     const handleMicClick = () => {
         if (!recognitionRef.current) {
             alert('Voice input is not supported in this browser.');
@@ -466,65 +547,32 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         // Reset state and start new session
         setShowReportModal(false);
         setCompletedSession(null);
-        setMessages([]);
-        setTurnCount(0);
-        setSessionId(null);
+        replaceMessages([]);
+        setTurnCountState(0);
+        setSessionIdState(null);
         setCurrentQuickReply(null);
-        setQuickReplyResponses({});
+        setQuickReplyResponsesState(() => ({}));
+        queuedMessagesRef.current = [];
+        setQueuedCount(0);
         hasInitialized.current = false;
         window.location.reload();
     };
 
     // Handle quick reply selection
     const handleQuickReplySelect = async (questionId: string, optionId: string, optionLabel: string) => {
-        // Save the response
-        setQuickReplyResponses(prev => ({ ...prev, [questionId]: optionId }));
-
-        // Clear current quick reply
+        setQuickReplyResponsesState(prev => ({ ...prev, [questionId]: optionId }));
         setCurrentQuickReply(null);
-
-        // Send as a regular message
-        setInput(optionLabel);
-
-        // Small delay then send
-        setTimeout(() => {
-            const userMsg: Message = { role: 'user', text: optionLabel, timestamp: new Date().toISOString() };
-            setMessages(prev => [...prev, userMsg]);
-            setInput('');
-
-            // Trigger the AI response
-            if (chatSession) {
-                setIsLoading(true);
-                startTurnTracking();
-                chatSession.sendMessage({ message: optionLabel }).then(async (response) => {
-                    const botMsg: Message = { role: 'model', text: response.text || '', timestamp: new Date().toISOString() };
-                    const newTurnCount = turnCount + 1;
-                    setTurnCount(newTurnCount);
-                    setMessages(prev => [...prev, botMsg]);
-
-                    // Trigger Quick Reply based on TINA's response content (keyword matching)
-                    const answeredQuestionIds = Object.keys(quickReplyResponses);
-                    const matchedQuickReply = detectQuickReply(botMsg.text, answeredQuestionIds);
-                    if (matchedQuickReply) {
-                        setCurrentQuickReply(matchedQuickReply);
-                    }
-
-                    setIsLoading(false);
-
-                    if (sessionId) {
-                        await updateSession(sessionId, [...messages, userMsg, botMsg], newTurnCount);
-                    }
-                }).catch((error) => {
-                    console.error('Quick reply error:', error);
-                    setIsLoading(false);
-                });
-            }
-        }, 100);
+        queueOrSendMessage(optionLabel);
     };
 
     return (
         <>
             <div className="chat-container">
+                <div className="chat-context-shell">
+                    <ActivityContextHeader config={activityConfig} />
+                    <ProgressBar currentTurn={turnCount} totalTurns={MAX_TURNS} />
+                </div>
+
                 <div className="chat-messages">
                     {messages.map((msg, idx) => (
                         <div
@@ -564,8 +612,6 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     <div ref={messagesEndRef} />
                 </div>
 
-                <ProgressBar currentTurn={turnCount} totalTurns={8} />
-
                 <div className="chat-input-container">
                     <button
                         className={`mic-button ${isRecording ? 'recording' : ''}`}
@@ -583,14 +629,20 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder={isRecording ? 'Listening...' : (isLoading ? 'Type to queue your next message...' : 'Share your thoughts...')}
+                        placeholder={
+                            isRecording
+                                ? 'Listening...'
+                                : isLoading
+                                    ? (queuedCount > 0 ? `${queuedCount} queued message(s)...` : 'Type to queue your next message...')
+                                    : 'Share your thoughts...'
+                        }
                     />
                     <button
                         className="send-button"
                         onClick={handleSend}
                         disabled={!input.trim()}
                     >
-                        {isLoading ? 'QUEUE' : 'SEND'}
+                        {isLoading ? (queuedCount > 0 ? `QUEUE (${queuedCount})` : 'QUEUE') : 'SEND'}
                     </button>
                 </div>
             </div>
@@ -605,3 +657,6 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         </>
     );
 }
+
+
+

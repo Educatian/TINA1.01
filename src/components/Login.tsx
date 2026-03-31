@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { hasSupabaseConfig } from '../lib/supabase';
 
 export function Login() {
     const navigate = useNavigate();
@@ -87,6 +88,12 @@ export function Login() {
                 </div>
 
                 <form className="login-form" onSubmit={handleSubmit}>
+                    {!hasSupabaseConfig && (
+                        <div className="error-message">
+                            Missing Supabase environment variables. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to your local `.env.local` file.
+                        </div>
+                    )}
+
                     {error && <div className="error-message">{error}</div>}
 
                     <div className="form-group">
@@ -117,7 +124,7 @@ export function Login() {
                     <button
                         type="submit"
                         className="btn btn-primary"
-                        disabled={loading}
+                        disabled={loading || !hasSupabaseConfig}
                     >
                         {loading ? 'Loading...' : (isSignUp ? 'Sign Up' : 'Sign In')}
                     </button>

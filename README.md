@@ -17,7 +17,7 @@
 
 ## ✨ What is TINA?
 
-TINA is a **10-minute AI-guided conversation** designed to help teachers:
+TINA is a **10-minute AI-guided conversation** designed to help teachers through a session of up to 12 TINA responses:
 
 - 🪞 **Reflect** on their teaching identity and core values
 - 🤖 **Explore** how AI is shaping their classroom practice  
@@ -25,6 +25,8 @@ TINA is a **10-minute AI-guided conversation** designed to help teachers:
 - 📊 **Receive** a personalized reflection report with actionable insights
 
 Built with the Nanobanana design system, TINA provides a warm, professional experience that feels like talking to a supportive colleague.
+
+For the structured activity customization model that keeps one shared chatbot while allowing instructor-defined learning context, see [docs/experience-customization-spec.md](./docs/experience-customization-spec.md).
 
 ---
 
@@ -106,6 +108,10 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+Notes:
+- `VITE_GEMINI_API_KEY` is the primary frontend key used by the chat experience.
+- `VITE_HUGGINGFACE_API_KEY` is required for the analytics and clustering features.
 
 ---
 
