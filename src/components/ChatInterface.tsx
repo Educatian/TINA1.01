@@ -16,11 +16,13 @@ import {
 import {
     buildActivitySystemInstruction,
     listAssignedLearnerActivities,
+    listInstructorActivities,
     loadActivityConfig,
     resolveActivityForChat,
     setActiveActivityRecord,
     updateEnrollmentStatus,
 } from '../services/activityConfig';
+import { isLearnerPreviewEnabled } from '../services/rolePreview';
 import { ReportModal } from './ReportModal';
 import { QuickReply, QuickReplyQuestion, detectQuickReply } from './QuickReply';
 import { ProgressBar } from './ProgressBar';
@@ -30,7 +32,7 @@ import type { ActivityConfig, ActivityRecord, Message, Session } from '../types'
 // Enhanced TINA System Prompt with Critical Thinking
 const SYSTEM_INSTRUCTION = `
 You are TINA (Teacher Identity Navigation Assistant).
-Your goal is to help teachers (users) reflect on their Teacher Identity, AI usage, and the relationship between AI and society through a 10-minute conversational coaching session.
+Your goal is to help learners reflect on their developing teacher identity, AI usage, and the relationship between AI and society through a 10-minute conversational coaching session.
 
 0) Core Principles
 - You are not an evaluator. Do not grade or judge.
@@ -43,7 +45,7 @@ Your goal is to help teachers (users) reflect on their Teacher Identity, AI usag
 1) Three Analysis Layers (Internal Tracking)
 Throughout the conversation, internally classify and summarize user inputs into these 3 layers. Do not tell the user you are "analyzing".
 
-Layer 1: Who am I (Teacher Identity)
+Layer 1: Who am I (Developing Teacher Identity)
 - Core Values (e.g., Equity, Care, Achievement, Autonomy, Connection, Rigor, Inquiry)
 - Role Identity (e.g., Deliverer, Facilitator, Coach, Designer, Evaluator, Mentor, Researcher)
 - Efficacy/Anxiety (Sources of confidence/anxiety)
@@ -93,7 +95,7 @@ Recommend: "Did I understand correctly?", "Could you say more?", "What was the r
 4) Orientation (Turn 1)
 Start with a warm, welcoming "Learning Companion" vibe.
 - Introduce yourself as TINA, a companion for navigating teacher identity.
-- Explain value: "I'm here to help you pause and reflect on your teaching values and how AI fits into your classroom journey."
+- Explain value: "I'm here to help you pause and reflect on your teaching values and how AI fits into your learning or classroom journey."
 - Create a safe space: "Think of this as a quiet moment for yourself to explore your thoughts."
 - DO NOT explicitly say "I will provide a summary report" or "Do not share PII" in this opening hook (unless the user violates safety). Just start naturally.
 
@@ -104,23 +106,23 @@ Provide the report at the end (within 12 turns). Use "tendency/possibility/obser
 Format:
 **TINA Reflection Report (10-minute Consultation)**
 
-**1) Teacher Identity Snapshot**
-- Main Role Identity (Observed):
-- Perceived Strengths:
-- Potential Tensions (Belief vs. Practice):
+**1) What Stood Out In Your Reflection**
+- Main pattern noticed:
+- Strengths that are emerging:
+- Tensions or open questions:
 
-**2) Core Values Estimation**
+**2) Values Guiding You Right Now**
 (Based on the conversation, list 3-5 values that appear to guide the user, e.g., Equity, Care, Efficiency, Autonomy)
 - [Value Name]: [Brief observation on how this value manifests]
 - [Value Name]: [Brief observation]
 
-**3) AI Use Profile**
+**3) Your Current AI Approach**
 - Main Purpose:
 - Control Level (Review/Edit habits):
 - Well-established Routines:
 - Routines to Strengthen:
 
-**4) AI-Society Reflection**
+**4) Practicum And Learner Impact**
 - Transparency/Explanation Strategy:
 - Considerations for Fairness/Gap:
 - Policy/Norm Alignment Check:
@@ -128,13 +130,13 @@ Format:
 **5) Integrated Insight**
 (4-6 sentences summarizing how identity influences AI choices and their social meaning.)
 
-**6) Next Reflection Questions**
+**6) Questions To Carry Forward**
 Q1:
 Q2:
 Q3:
 
-**7) Practical Next Step**
-(One small, concrete action to try in the next class/task.)
+**7) One Next Move**
+(One small, concrete action to try in the next class, practicum, or planning task.)
 
 6) Safety/Ethics Guide
 - If PII mentioned: Ask to generalize.
@@ -154,10 +156,13 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const { user, isAdmin } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+    const isLearnerPreview = isAdmin && isLearnerPreviewEnabled();
+    const actsAsInstructor = isAdmin && !isLearnerPreview;
     const [activityConfig, setActivityConfig] = useState<ActivityConfig>(() => loadActivityConfig());
     const [resolvedActivityId, setResolvedActivityId] = useState<string | null>(null);
     const [learnerActivities, setLearnerActivities] = useState<ActivityRecord[]>([]);
     const [selectedLearnerActivityId, setSelectedLearnerActivityId] = useState<string>('');
+    const [previewNotice, setPreviewNotice] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -216,14 +221,22 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     }, []);
 
     useEffect(() => {
-        if (!user || isAdmin) {
+        if (!user || actsAsInstructor) {
             setLearnerActivities([]);
             return;
         }
 
         const loadLearnerActivities = async () => {
-            const activities = await listAssignedLearnerActivities(user.id);
+            let activities = await listAssignedLearnerActivities(user.id);
+            if (activities.length === 0 && isLearnerPreview) {
+                activities = await listInstructorActivities(user.id);
+            }
             setLearnerActivities(activities);
+            setPreviewNotice(
+                isLearnerPreview && activities.length === 0
+                    ? 'Learner preview is using the default TINA activity context because no saved activity was found yet.'
+                    : '',
+            );
             if (activities.length > 0) {
                 setSelectedLearnerActivityId(prev => prev || activities[0].id);
             } else {
@@ -232,7 +245,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         };
 
         void loadLearnerActivities();
-    }, [user, isAdmin]);
+    }, [user, actsAsInstructor, isLearnerPreview]);
 
     // Initialize Chat Session
     useEffect(() => {
@@ -241,11 +254,23 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
         const initChat = async () => {
             try {
-                const currentActivityRecord = await resolveActivityForChat({
+                let currentActivityRecord = await resolveActivityForChat({
                     userId: user.id,
-                    isInstructor: isAdmin,
+                    isInstructor: actsAsInstructor,
                     preferredActivityId: resumeSession?.activity_id || undefined,
                 });
+
+                if (!currentActivityRecord && isLearnerPreview) {
+                    const previewActivities = await listInstructorActivities(user.id);
+                    currentActivityRecord = previewActivities.find(
+                        (activity) => activity.id === (resumeSession?.activity_id || selectedLearnerActivityId),
+                    ) || previewActivities[0] || null;
+
+                    if (currentActivityRecord) {
+                        setActiveActivityRecord(currentActivityRecord);
+                    }
+                }
+
                 const currentActivityConfig = currentActivityRecord || loadActivityConfig();
                 setActivityConfig(currentActivityConfig);
                 setResolvedActivityId(currentActivityRecord?.id || null);
@@ -253,13 +278,17 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     setSelectedLearnerActivityId(currentActivityRecord.id);
                 }
 
-                if (!isAdmin && !currentActivityRecord) {
+                if (!actsAsInstructor && !currentActivityRecord && !isLearnerPreview) {
                     replaceMessages([{
                         role: 'model',
                         text: 'No activity has been assigned to your account yet. Please contact your instructor before starting a session.',
                         timestamp: new Date().toISOString(),
                     }]);
                     return;
+                }
+
+                if (!currentActivityRecord && isLearnerPreview) {
+                    setPreviewNotice('Learner preview is using the default TINA activity context because no saved activity was found yet.');
                 }
 
                 // Check if resuming a session
@@ -311,7 +340,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     setSessionIdState(newSessionId);
                     // Initialize analytics tracking
                     initSessionTracking();
-                    if (!isAdmin && currentActivityRecord?.id) {
+                    if (!actsAsInstructor && currentActivityRecord?.id && !isLearnerPreview) {
                         try {
                             await updateEnrollmentStatus(currentActivityRecord.id, user.id, 'started');
                         } catch (enrollmentError) {
@@ -352,7 +381,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         };
 
         initChat();
-    }, [user, isAdmin]);
+    }, [user, actsAsInstructor, isLearnerPreview, selectedLearnerActivityId]);
 
     // Initialize Speech Recognition
     useEffect(() => {
@@ -516,7 +545,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         outputText: botMsg.text,
                     });
 
-                    if (!isAdmin) {
+                    if (!actsAsInstructor && !isLearnerPreview) {
                         try {
                             await updateEnrollmentStatus(resolvedActivityId, user.id, 'completed');
                         } catch (enrollmentError) {
@@ -540,7 +569,11 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 }
 
                 const answeredQuestionIds = Object.keys(quickReplyResponsesRef.current);
-                const matchedQuickReply = detectQuickReply(botMsg.text, answeredQuestionIds);
+                const matchedQuickReply = detectQuickReply(
+                    botMsg.text,
+                    answeredQuestionIds,
+                    activityConfig.learnerLevel,
+                );
                 setCurrentQuickReply(matchedQuickReply);
                 startTurnTracking();
             }
@@ -645,13 +678,13 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         queueOrSendMessage(optionLabel);
     };
 
-    const canInteract = Boolean(chatSession) && (isAdmin || learnerActivities.length > 0);
+    const canInteract = Boolean(chatSession) && (actsAsInstructor || learnerActivities.length > 0 || isLearnerPreview);
 
     return (
         <>
             <div className="chat-container">
                 <div className="chat-context-shell">
-                    {!isAdmin && learnerActivities.length > 0 && (
+                    {!actsAsInstructor && learnerActivities.length > 0 && (
                         <div className="activity-selector-bar">
                             <label htmlFor="learner-activity-select">Current activity</label>
                             <select
@@ -667,12 +700,14 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                             </select>
                         </div>
                     )}
-                    {!isAdmin && learnerActivities.length === 0 && (
+                    {!actsAsInstructor && learnerActivities.length === 0 && (
                         <div className="activity-selector-empty">
-                            No activity has been assigned to your account yet. Please contact your instructor.
+                            {isLearnerPreview
+                                ? previewNotice || 'Learner preview is using the default TINA activity context.'
+                                : 'No activity has been assigned to your account yet. Please contact your instructor.'}
                         </div>
                     )}
-                    {(isAdmin || learnerActivities.length > 0) && (
+                    {(actsAsInstructor || learnerActivities.length > 0 || isLearnerPreview) && (
                         <ActivityContextHeader config={activityConfig} />
                     )}
                     <ProgressBar currentTurn={turnCount} totalTurns={MAX_TURNS} />

@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { clearRolePreview } from '../services/rolePreview';
 import type { User, AuthState } from '../types';
+
+const LOCAL_ADMIN_EMAILS = new Set(['jewoong.moon@gmail.com']);
+
+function isLocalDevHost() {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+}
 
 async function buildUser(sessionUser: {
     id: string;
@@ -28,6 +39,10 @@ async function buildUser(sessionUser: {
 
     if (profile?.email) {
         email = profile.email;
+    }
+
+    if (role !== 'admin' && email && isLocalDevHost() && LOCAL_ADMIN_EMAILS.has(email.toLowerCase())) {
+        role = 'admin';
     }
 
     return {
@@ -145,6 +160,7 @@ export function useAuth() {
     }, []);
 
     const signOut = useCallback(async () => {
+        clearRolePreview();
         await supabase.auth.signOut();
         setAuthState({ user: null, loading: false, error: null });
     }, []);

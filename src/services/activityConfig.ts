@@ -64,6 +64,14 @@ const OUTPUT_FORMAT_LABELS: Record<OutputFormat, string> = {
     checklist: 'Checklist',
 };
 
+const OUTPUT_PROMISES: Record<OutputFormat, string> = {
+    'short-reflection': 'a short reflection and one next-step idea',
+    'three-point-action-plan': 'a three-point action plan you can try next',
+    'lesson-idea-draft': 'a lesson idea draft you can refine for practicum',
+    'case-response-outline': 'a case response outline you can build from',
+    checklist: 'a practical checklist you can use right away',
+};
+
 export const defaultActivityConfig: ActivityConfig = {
     title: 'AI Reflection Studio',
     courseName: 'Preservice Teacher Development',
@@ -225,6 +233,14 @@ export function getLearnerLevelLabel(level: LearnerLevel) {
 
 export function getOutputFormatLabel(format: OutputFormat) {
     return OUTPUT_FORMAT_LABELS[format];
+}
+
+export function getOutputPromise(format: OutputFormat) {
+    return OUTPUT_PROMISES[format];
+}
+
+export function isPreserviceLearnerLevel(level: LearnerLevel) {
+    return level === 'intro-preservice' || level === 'mid-program' || level === 'practicum-ready';
 }
 
 export async function listInstructorActivities(instructorId: string): Promise<ActivityRecord[]> {
@@ -453,29 +469,33 @@ export async function resolveActivityForChat(options: {
     preferredActivityId?: string | null;
 }): Promise<ActivityRecord | null> {
     const explicitId = options.preferredActivityId || getActiveActivityId();
-    if (explicitId) {
-        const explicitRecord = await fetchActivityById(explicitId);
-        if (explicitRecord) {
-            if (options.isInstructor) {
+    if (options.isInstructor) {
+        if (explicitId) {
+            const explicitRecord = await fetchActivityById(explicitId);
+            if (explicitRecord) {
                 setActiveActivityRecord(explicitRecord);
-            } else {
-                cacheActivityRecord(explicitRecord);
+                return explicitRecord;
             }
-            return explicitRecord;
         }
+
+        const instructorRecords = await listInstructorActivities(options.userId);
+        const firstInstructorRecord = instructorRecords[0] || null;
+        if (firstInstructorRecord) {
+            setActiveActivityRecord(firstInstructorRecord);
+        }
+        return firstInstructorRecord;
     }
 
-    const records = options.isInstructor
-        ? await listInstructorActivities(options.userId)
-        : await listAssignedLearnerActivities(options.userId);
+    const records = await listAssignedLearnerActivities(options.userId);
+    const explicitRecord = explicitId
+        ? records.find((record) => record.id === explicitId) || null
+        : null;
 
-    const firstRecord = records[0] || null;
+    const firstRecord = explicitRecord || records[0] || null;
     if (firstRecord) {
-        if (options.isInstructor) {
-            setActiveActivityRecord(firstRecord);
-        } else {
-            cacheActivityRecord(firstRecord);
-        }
+        cacheActivityRecord(firstRecord);
+    } else {
+        cacheActivityRecord(null);
     }
 
     return firstRecord;
@@ -496,6 +516,18 @@ export function buildActivitySystemInstruction(baseInstruction: string, config: 
         config.constraints.reasoningBeforeConclusion && 'Require reasoning before final conclusions.',
         config.constraints.conciseResponses && 'Keep your responses concise and focused.',
     ].filter(Boolean);
+
+    const learnerContextRules = isPreserviceLearnerLevel(config.learnerLevel)
+        ? [
+            'Treat the user as a preservice teacher, practicum learner, or coursework-based learner rather than assuming they already run their own classroom independently.',
+            'Prefer examples about lesson planning, coursework, observation, microteaching, practicum preparation, mentor feedback, and future classroom decisions.',
+            'If the user lacks direct classroom ownership yet, let them answer with hypothetical, practicum, or future-teaching examples without making them feel behind.',
+            'Use coaching language that supports confidence-building. Avoid sounding like you are judging teaching readiness.',
+            'In the closing report, use coaching-style headings and insights rather than typology or diagnosis language.',
+        ]
+        : [
+            'Assume the user may answer from current classroom practice and professional reflection.',
+        ];
 
     return `${baseInstruction}
 
@@ -522,5 +554,11 @@ ${constraintRules.length > 0 ? constraintRules.map(rule => `- ${rule}`).join('\n
 - Keep the same TINA identity and tone.
 - Adapt your examples and closing summary to the activity context above.
 - Shape the closing so the learner leaves with the configured final output format.
-- Do not mention internal configuration or say that an instructor customized the bot.`;
+- Do not mention internal configuration or say that an instructor customized the bot.
+
+13) Learner Framing
+${learnerContextRules.map(rule => `- ${rule}`).join('\n')}
+
+14) Outcome Promise
+- Help the learner leave with ${getOutputPromise(config.outputFormat)}.`;
 }

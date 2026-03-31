@@ -4,6 +4,7 @@ import {
     getActivityGoalLabel,
     getLearnerLevelLabel,
     getOutputFormatLabel,
+    getOutputPromise,
 } from '../services/activityConfig';
 
 interface ActivityContextHeaderProps {
@@ -19,13 +20,18 @@ export function ActivityContextHeader({ config }: ActivityContextHeaderProps) {
         config.constraints.noOneClickAnswers && 'No one-click answers',
         config.constraints.reasoningBeforeConclusion && 'Reasoning before conclusions',
     ].filter(Boolean) as string[];
+    const visibleRuleChips = ruleChips.slice(0, 3);
+    const hiddenRuleCount = Math.max(ruleChips.length - visibleRuleChips.length, 0);
 
     return (
         <div className="activity-context-card">
             <div className="activity-context-top">
-                <div>
-                    <div className="activity-context-eyebrow">{getActivityGoalLabel(config.activityGoal)}</div>
-                    <h2>{config.title}</h2>
+                <div className="activity-context-heading">
+                    <div className="activity-context-title-row">
+                        <div className="activity-context-eyebrow">{getActivityGoalLabel(config.activityGoal)}</div>
+                        <h2>{config.title}</h2>
+                    </div>
+                    <p className="activity-context-description">{config.learnerDescription}</p>
                 </div>
                 <div className="activity-context-meta">
                     <span>{config.courseName}</span>
@@ -33,47 +39,42 @@ export function ActivityContextHeader({ config }: ActivityContextHeaderProps) {
                 </div>
             </div>
 
-            <p className="activity-context-description">{config.learnerDescription}</p>
+            <div className="activity-context-summary">
+                <span><strong>Topic</strong> {config.topic}</span>
+                <span><strong>Learner Level</strong> {getLearnerLevelLabel(config.learnerLevel)}</span>
+                <span><strong>Time</strong> {config.estimatedMinutes || 10} min</span>
+                <span><strong>Output</strong> {getOutputFormatLabel(config.outputFormat)}</span>
+            </div>
 
-            <div className="activity-context-grid">
-                <div className="activity-context-panel">
-                    <strong>Topic</strong>
-                    <p>{config.topic}</p>
-                </div>
-                <div className="activity-context-panel">
-                    <strong>Learner Level</strong>
-                    <p>{getLearnerLevelLabel(config.learnerLevel)}</p>
-                </div>
-                <div className="activity-context-panel">
-                    <strong>Expected Time</strong>
-                    <p>{config.estimatedMinutes || 10} minutes</p>
-                </div>
-                <div className="activity-context-panel">
-                    <strong>Final Output</strong>
-                    <p>{getOutputFormatLabel(config.outputFormat)}</p>
-                </div>
+            <div className="activity-context-outcome">
+                <strong>You will leave with:</strong> {getOutputPromise(config.outputFormat)}.
             </div>
 
             {config.scenario && (
-                <div className="activity-context-callout">
-                    <strong>Scenario</strong>
-                    <p>{config.scenario}</p>
+                <div className="activity-context-note">
+                    <strong>Scenario:</strong> {config.scenario}
+                </div>
+            )}
+
+            {config.instructorNote && (
+                <div className="activity-context-note">
+                    <strong>Instructor note:</strong> {config.instructorNote}
                 </div>
             )}
 
             {ruleChips.length > 0 && (
                 <div className="activity-rule-list">
-                    {ruleChips.map(rule => (
+                    {visibleRuleChips.map(rule => (
                         <span key={rule} className="activity-rule-chip">{rule}</span>
                     ))}
+                    {hiddenRuleCount > 0 && (
+                        <span className="activity-rule-chip activity-rule-chip-muted">+{hiddenRuleCount} more</span>
+                    )}
                 </div>
             )}
 
             <div className="activity-context-footer">
-                <p>You are chatting with the same TINA. This activity only changes the learning context, not the chatbot identity.</p>
-                {config.instructorNote && (
-                    <p><strong>Instructor note:</strong> {config.instructorNote}</p>
-                )}
+                <p>Same TINA, different learning context.</p>
             </div>
         </div>
     );

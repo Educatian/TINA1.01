@@ -177,7 +177,7 @@ export function AdminDashboard() {
   const attitudeCounts = sessionAnalytics.reduce((acc, record) => { if (record.ai_attitude) acc[record.ai_attitude] = (acc[record.ai_attitude] || 0) + 1; return acc; }, {} as Record<string, number>);
   const selectedUser = users.find((profile) => profile.id === selectedUserId);
   const selectedActivity = useMemo(() => activities.find((activity) => activity.id === selectedActivityId) || null, [activities, selectedActivityId]);
-  const learnerCandidates = useMemo(() => users.filter((profile) => profile.role !== 'admin'), [users]);
+  const learnerCandidates = useMemo(() => users, [users]);
   const enrolledLearnerIds = useMemo(() => new Set(enrollments.map((enrollment) => enrollment.learnerId)), [enrollments]);
   const selectedActivitySessions = useMemo(() => sessions.filter((session) => session.activity_id === selectedActivityId), [sessions, selectedActivityId]);
   const selectedActivityCompletedSessions = useMemo(() => selectedActivitySessions.filter((session) => session.completed_at), [selectedActivitySessions]);
@@ -243,7 +243,7 @@ export function AdminDashboard() {
               <ActivityConfigForm initialConfig={activityConfig} onSave={handleSaveActivity} saveLabel={selectedActivityId ? 'Update Activity' : 'Create Activity'} />
               <div className="activity-form-section">
                 <h3>Learner Assignment</h3>
-                <p>Assign the selected activity to learners. Only assigned learners should see it in their chat workspace.</p>
+                <p>Assign the selected activity to learners. Admin accounts can also be assigned here for learner-mode testing in the same app.</p>
                 {!selectedActivityId && <p style={{ marginTop: '10px', color: '#6b7280' }}>Save or select an activity before managing enrollments.</p>}
                 {selectedActivityId && (
                   <div style={{ display: 'grid', gap: '10px', marginTop: '16px' }}>

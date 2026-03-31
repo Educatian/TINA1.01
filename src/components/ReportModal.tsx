@@ -277,7 +277,7 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                     }}>T</div>
 
                     <div className="report-header">
-                        <h1>TINA Reflection Report</h1>
+                        <h1>TINA Reflection Summary</h1>
                         <p>Teacher Identity Navigation Assistant</p>
                         <p className="report-date">Completed on {date}</p>
                     </div>
@@ -310,6 +310,9 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                             </div>
                             <div style={{ fontSize: '0.9rem', color: '#666' }}>
                                 {CLUSTER_INFO[session.teacher_cluster as TeacherCluster].description}
+                            </div>
+                            <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '8px' }}>
+                                Reflection lens only, not a grade or evaluation.
                             </div>
                         </div>
                     )}
