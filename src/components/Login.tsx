@@ -12,12 +12,10 @@ export function Login() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        let success = false;
-        if (isSignUp) {
-            success = await signUp(email, password);
-        } else {
-            success = await signIn(email, password);
-        }
+        const success = isSignUp
+            ? await signUp(email, password)
+            : await signIn(email, password);
+
         if (success) {
             navigate('/');
         }
@@ -25,15 +23,14 @@ export function Login() {
 
     return (
         <div className="login-container">
-            {/* Hero Section */}
             <div className="landing-hero">
                 <div className="landing-content">
-                    <div className="landing-badge">AI-Powered Reflection Tool</div>
+                    <div className="landing-badge">AI-Guided Reflection</div>
                     <h1 className="landing-title">TINA</h1>
                     <p className="landing-subtitle">Teacher Identity Navigation Assistant</p>
                     <p className="landing-description">
-                        A 10-minute AI-guided conversation to explore your teacher identity,
-                        values, and how AI is shaping your practice.
+                        A short guided conversation for preservice and practicing teachers to reflect on values,
+                        AI use, and what to try next.
                     </p>
 
                     <div className="landing-features">
@@ -44,8 +41,8 @@ export function Login() {
                                 </svg>
                             </div>
                             <div>
-                                <strong>Reflective Dialogue</strong>
-                                <p>Engage in meaningful conversation about your teaching practice</p>
+                                <strong>Guided Reflection</strong>
+                                <p>Talk through what feels important, difficult, or unfinished in your teaching context.</p>
                             </div>
                         </div>
                         <div className="feature-item">
@@ -55,8 +52,8 @@ export function Login() {
                                 </svg>
                             </div>
                             <div>
-                                <strong>Personalized Report</strong>
-                                <p>Receive a detailed reflection report with actionable insights</p>
+                                <strong>Actionable Debrief</strong>
+                                <p>Leave with a concise summary, a next move, and questions to carry forward.</p>
                             </div>
                         </div>
                         <div className="feature-item">
@@ -66,16 +63,14 @@ export function Login() {
                                 </svg>
                             </div>
                             <div>
-                                <strong>Teacher Profiling</strong>
-                                <p>Discover your teacher type based on AI integration readiness</p>
+                                <strong>Growth Over Labels</strong>
+                                <p>Use TINA as a coaching tool, not a grading or ranking system.</p>
                             </div>
                         </div>
                     </div>
-
                 </div>
             </div>
 
-            {/* Login Card */}
             <div className="login-card">
                 <div className="login-logo">
                     <img
@@ -83,8 +78,8 @@ export function Login() {
                         alt="TINA Mascot"
                         className="login-mascot"
                     />
-                    <h2>Welcome Back!</h2>
-                    <p>Start your reflection journey</p>
+                    <h2>Welcome back</h2>
+                    <p>Start a guided reflection in just a few minutes.</p>
                 </div>
 
                 <form className="login-form" onSubmit={handleSubmit}>
@@ -115,7 +110,7 @@ export function Login() {
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            placeholder="••••••••"
+                            placeholder="Enter your password"
                             required
                             minLength={6}
                         />
@@ -138,7 +133,7 @@ export function Login() {
                         </>
                     ) : (
                         <>
-                            Don't have an account?{' '}
+                            Need an account?{' '}
                             <button type="button" onClick={() => setIsSignUp(true)}>Sign Up</button>
                         </>
                     )}
@@ -147,4 +142,3 @@ export function Login() {
         </div>
     );
 }
-

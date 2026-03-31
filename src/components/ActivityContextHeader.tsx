@@ -9,9 +9,17 @@ import {
 
 interface ActivityContextHeaderProps {
     config: ActivityConfig;
+    collapsed?: boolean;
+    showToggle?: boolean;
+    onToggle?: () => void;
 }
 
-export function ActivityContextHeader({ config }: ActivityContextHeaderProps) {
+export function ActivityContextHeader({
+    config,
+    collapsed = false,
+    showToggle = false,
+    onToggle,
+}: ActivityContextHeaderProps) {
     const ruleChips = [
         config.guidance.evidenceFirst && 'Evidence first',
         config.guidance.compareAlternatives && 'Compare alternatives',
@@ -22,6 +30,31 @@ export function ActivityContextHeader({ config }: ActivityContextHeaderProps) {
     ].filter(Boolean) as string[];
     const visibleRuleChips = ruleChips.slice(0, 3);
     const hiddenRuleCount = Math.max(ruleChips.length - visibleRuleChips.length, 0);
+
+    if (collapsed) {
+        return (
+            <div className="activity-context-card activity-context-card-collapsed">
+                <div className="activity-context-collapsed-row">
+                    <div>
+                        <div className="activity-context-eyebrow">{getActivityGoalLabel(config.activityGoal)}</div>
+                        <h2>{config.title}</h2>
+                    </div>
+                    <div className="activity-context-collapsed-meta">
+                        <span>{getOutputFormatLabel(config.outputFormat)}</span>
+                        {showToggle && onToggle && (
+                            <button
+                                type="button"
+                                className="activity-context-toggle"
+                                onClick={onToggle}
+                            >
+                                Show details
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="activity-context-card">
@@ -36,6 +69,15 @@ export function ActivityContextHeader({ config }: ActivityContextHeaderProps) {
                 <div className="activity-context-meta">
                     <span>{config.courseName}</span>
                     <span>{config.moduleLabel}</span>
+                    {showToggle && onToggle && (
+                        <button
+                            type="button"
+                            className="activity-context-toggle"
+                            onClick={onToggle}
+                        >
+                            Minimize
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -74,7 +116,7 @@ export function ActivityContextHeader({ config }: ActivityContextHeaderProps) {
             )}
 
             <div className="activity-context-footer">
-                <p>Same TINA, different learning context.</p>
+                <p>Same TINA, guided for this activity.</p>
             </div>
         </div>
     );

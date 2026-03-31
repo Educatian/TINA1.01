@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { getActivityOutputs, getAllSessions } from '../hooks/useSession';
 import { useAuth } from '../hooks/useAuth';
 import { assignLearnerToActivity, defaultActivityConfig, deleteInstructorActivity, listActivityEnrollments, listInstructorActivities, removeLearnerFromActivity, saveInstructorActivity, setActiveActivityRecord, setActivityPublished } from '../services/activityConfig';
+import { setRolePreview } from '../services/rolePreview';
 import { ActivityConfigForm } from './ActivityConfigForm';
 import type { ActivityConfig, ActivityEnrollment, ActivityRecord, Session, SessionOutput } from '../types';
 
@@ -32,6 +34,7 @@ export function AdminDashboard() {
   const [enrollments, setEnrollments] = useState<ActivityEnrollment[]>([]);
   const [enrollmentBusyId, setEnrollmentBusyId] = useState<string | null>(null);
   const [activityOutputs, setActivityOutputs] = useState<SessionOutput[]>([]);
+  const [liveLearnerCount, setLiveLearnerCount] = useState(0);
 
   const loadDashboardData = async () => {
     const sessionsData = await getAllSessions();
@@ -82,6 +85,32 @@ export function AdminDashboard() {
   useEffect(() => {
     void loadEnrollments(selectedActivityId);
   }, [selectedActivityId]);
+
+  useEffect(() => {
+    let presenceChannel: RealtimeChannel | null = null;
+
+    if (!selectedActivityId || !user) {
+      setLiveLearnerCount(0);
+      return;
+    }
+
+    presenceChannel = supabase.channel(`activity-presence:${selectedActivityId}`);
+
+    const syncPresenceCount = () => {
+      const state = presenceChannel?.presenceState() || {};
+      setLiveLearnerCount(Object.keys(state).length);
+    };
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, syncPresenceCount)
+      .subscribe();
+
+    return () => {
+      if (presenceChannel) {
+        void supabase.removeChannel(presenceChannel);
+      }
+    };
+  }, [selectedActivityId, user]);
 
   const toggleAdminRole = async (userId: string, currentRole: string) => {
     setUpdatingRole(userId);
@@ -166,6 +195,13 @@ export function AdminDashboard() {
     }
   };
 
+  const handlePreviewLearnerExperience = (activity: ActivityRecord) => {
+    setActiveActivityRecord(activity);
+    setRolePreview('learner');
+    navigate('/');
+    window.location.reload();
+  };
+
   const filteredSessions = selectedUserId ? sessions.filter((s) => s.user_id === selectedUserId) : sessions;
   const completedSessions = filteredSessions.filter((s) => s.completed_at);
   const totalTurns = filteredSessions.reduce((sum, s) => sum + (s.turn_count || 0), 0);
@@ -185,6 +221,18 @@ export function AdminDashboard() {
   const completedLearnerCount = useMemo(() => new Set(selectedActivityCompletedSessions.map((session) => session.user_id)).size, [selectedActivityCompletedSessions]);
   const submittedLearnerCount = useMemo(() => new Set(activityOutputs.filter((output) => output.submittedAt).map((output) => output.userId)).size, [activityOutputs]);
   const avgActivityTurns = useMemo(() => selectedActivitySessions.length > 0 ? (selectedActivitySessions.reduce((sum, session) => sum + (session.turn_count || 0), 0) / selectedActivitySessions.length).toFixed(1) : '0.0', [selectedActivitySessions]);
+  const notStartedLearnerCount = useMemo(() => Math.max(enrollments.length - startedLearnerCount, 0), [enrollments.length, startedLearnerCount]);
+  const followUpLearnerCount = useMemo(() => new Set(selectedActivitySessions.filter((session) => !session.completed_at || (session.turn_count || 0) < 4).map((session) => session.user_id)).size, [selectedActivitySessions]);
+  const lifecycleSteps = useMemo(() => {
+    if (!selectedActivity) return [];
+    return [
+      { label: 'Drafted', done: true },
+      { label: 'Published', done: selectedActivity.isPublished },
+      { label: 'Assigned', done: enrollments.length > 0 },
+      { label: 'Started', done: startedLearnerCount > 0 },
+      { label: 'Completed', done: completedLearnerCount > 0 || submittedLearnerCount > 0 },
+    ];
+  }, [selectedActivity, enrollments.length, startedLearnerCount, completedLearnerCount, submittedLearnerCount]);
 
   if (loading) return <div className="admin-container"><p>Loading analytics...</p></div>;
 
@@ -237,6 +285,37 @@ export function AdminDashboard() {
                 ))}
               </div>
               {selectedActivity && <div style={{ marginTop: '16px', padding: '12px', background: '#FCF3CF', borderRadius: '10px', color: '#7F8C8D', fontSize: '0.85rem' }}>The selected activity is currently the active instructor chat context.</div>}
+              {selectedActivity && (
+                <div style={{ marginTop: '12px', display: 'grid', gap: '10px' }}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ padding: '10px 14px', fontSize: '0.85rem' }}
+                    onClick={() => handlePreviewLearnerExperience(selectedActivity)}
+                  >
+                    Preview Learner Experience
+                  </button>
+                  <div style={{ padding: '12px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #E5E7EB' }}>
+                    <strong style={{ color: '#2C3E50', display: 'block', marginBottom: '8px' }}>Activity Lifecycle</strong>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {lifecycleSteps.map((step) => (
+                        <span
+                          key={step.label}
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: '999px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            background: step.done ? '#D1FAE5' : '#FEF3C7',
+                            color: step.done ? '#047857' : '#B45309',
+                          }}
+                        >
+                          {step.done ? 'Done' : 'Next'}: {step.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
               {activityStatus && <p style={{ marginTop: '14px', color: '#2C7A7B', fontSize: '0.88rem' }}>{activityStatus}</p>}
             </div>
             <div style={{ display: 'grid', gap: '20px' }}>
@@ -288,7 +367,39 @@ export function AdminDashboard() {
                       <h3>Avg Turns</h3>
                       <div className="value">{avgActivityTurns}</div>
                     </div>
+                    <div className="stat-card">
+                      <h3>Live Now</h3>
+                      <div className="value">{liveLearnerCount}</div>
+                    </div>
                   </div>
+
+                  <h3 style={{ marginTop: '8px' }}>Instructional Signals</h3>
+                  <div className="stats-grid" style={{ marginTop: '16px', marginBottom: '20px' }}>
+                    <div className="stat-card">
+                      <h3>Not Started</h3>
+                      <div className="value">{notStartedLearnerCount}</div>
+                    </div>
+                    <div className="stat-card">
+                      <h3>Need Follow-Up</h3>
+                      <div className="value">{followUpLearnerCount}</div>
+                    </div>
+                    <div className="stat-card">
+                      <h3>Ready To Review</h3>
+                      <div className="value">{submittedLearnerCount}</div>
+                    </div>
+                  </div>
+
+                  {(notStartedLearnerCount > 0 || followUpLearnerCount > 0) && (
+                    <div style={{ padding: '14px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '12px', marginBottom: '20px', color: '#92400E' }}>
+                      <strong style={{ display: 'block', marginBottom: '8px' }}>What needs attention next</strong>
+                      {notStartedLearnerCount > 0 && (
+                        <p style={{ marginBottom: '4px' }}>{notStartedLearnerCount} assigned learner(s) have not started this activity yet.</p>
+                      )}
+                      {followUpLearnerCount > 0 && (
+                        <p>{followUpLearnerCount} learner(s) may need follow-up because they have short or unfinished sessions.</p>
+                      )}
+                    </div>
+                  )}
 
                   <h3 style={{ marginTop: '8px' }}>Recent Outputs</h3>
                   {activityOutputs.length === 0 ? (

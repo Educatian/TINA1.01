@@ -138,6 +138,7 @@ interface QuickReplyProps {
 export function QuickReply({ question, onSelect, disabled }: QuickReplyProps) {
     return (
         <div className="quick-reply-container">
+            <p className="quick-reply-question">{question.questionText}</p>
             <div className="quick-reply-buttons">
                 {question.options.map((option) => (
                     <button
@@ -146,7 +147,6 @@ export function QuickReply({ question, onSelect, disabled }: QuickReplyProps) {
                         onClick={() => onSelect(question.id, option.id, option.label)}
                         disabled={disabled}
                     >
-                        {option.emoji && <span className="quick-reply-emoji">{option.emoji}</span>}
                         <span className="quick-reply-label">{option.label}</span>
                     </button>
                 ))}

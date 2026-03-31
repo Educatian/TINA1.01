@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAuth } from '../hooks/useAuth';
 import { createSession, updateSession, completeSession, getSession, upsertSessionOutput } from '../hooks/useSession';
 import { classifyTeacherCluster } from '../services/nlpService';
@@ -23,6 +24,7 @@ import {
     updateEnrollmentStatus,
 } from '../services/activityConfig';
 import { isLearnerPreviewEnabled } from '../services/rolePreview';
+import { supabase } from '../lib/supabase';
 import { ReportModal } from './ReportModal';
 import { QuickReply, QuickReplyQuestion, detectQuickReply } from './QuickReply';
 import { ProgressBar } from './ProgressBar';
@@ -163,6 +165,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const [learnerActivities, setLearnerActivities] = useState<ActivityRecord[]>([]);
     const [selectedLearnerActivityId, setSelectedLearnerActivityId] = useState<string>('');
     const [previewNotice, setPreviewNotice] = useState('');
+    const [isContextCollapsed, setIsContextCollapsed] = useState(false);
+    const [presenceCount, setPresenceCount] = useState(0);
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -186,6 +190,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const sessionIdRef = useRef<string | null>(null);
     const quickReplyResponsesRef = useRef<Record<string, string>>({});
     const queuedMessagesRef = useRef<string[]>([]);
+    const presenceChannelRef = useRef<RealtimeChannel | null>(null);
 
     // Check for resume session from navigation state
     const resumeSession = (location.state as any)?.resumeSession as Session | undefined;
@@ -193,6 +198,12 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     useEffect(() => {
         messagesRef.current = messages;
     }, [messages]);
+
+    useEffect(() => {
+        if (!actsAsInstructor && messages.some((message) => message.role === 'user')) {
+            setIsContextCollapsed(true);
+        }
+    }, [messages, actsAsInstructor]);
 
     useEffect(() => {
         turnCountRef.current = turnCount;
@@ -219,6 +230,59 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             window.removeEventListener('activity-config-updated', syncActivityConfig as EventListener);
         };
     }, []);
+
+    useEffect(() => {
+        if (actsAsInstructor || !user) {
+            setPresenceCount(0);
+            if (presenceChannelRef.current) {
+                void supabase.removeChannel(presenceChannelRef.current);
+                presenceChannelRef.current = null;
+            }
+            return;
+        }
+
+        const presenceActivityKey = resolvedActivityId || (isLearnerPreview ? 'preview-default' : null);
+        if (!presenceActivityKey) {
+            setPresenceCount(0);
+            return;
+        }
+
+        const channel = supabase.channel(`activity-presence:${presenceActivityKey}`, {
+            config: {
+                presence: {
+                    key: user.id,
+                },
+            },
+        });
+
+        const syncPresenceCount = () => {
+            const state = channel.presenceState();
+            const totalParticipants = Object.keys(state).length;
+            setPresenceCount(Math.max(totalParticipants - 1, 0));
+        };
+
+        channel
+            .on('presence', { event: 'sync' }, syncPresenceCount)
+            .subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    await channel.track({
+                        user_id: user.id,
+                        activity_id: presenceActivityKey,
+                        role: isLearnerPreview ? 'learner-preview' : 'learner',
+                        joined_at: new Date().toISOString(),
+                    });
+                }
+            });
+
+        presenceChannelRef.current = channel;
+
+        return () => {
+            if (presenceChannelRef.current) {
+                void supabase.removeChannel(presenceChannelRef.current);
+                presenceChannelRef.current = null;
+            }
+        };
+    }, [user, actsAsInstructor, resolvedActivityId, isLearnerPreview]);
 
     useEffect(() => {
         if (!user || actsAsInstructor) {
@@ -499,11 +563,13 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
             const reportPatterns = [
                 'TINA Reflection Report',
+                'TINA Reflection Summary',
                 'Reflection Report',
-                '**1) Teacher Identity',
-                '**2) Core Values',
+                '**1) What Stood Out In Your Reflection',
+                '**2) Values Guiding You Right Now',
+                '**3) Your Current AI Approach',
                 'Integrated Insight',
-                'Practical Next Step'
+                '**7) One Next Move'
             ];
             const isReportTurn = reportPatterns.some(pattern => botMsg.text.includes(pattern)) || newTurnCount >= MAX_TURNS;
 
@@ -511,7 +577,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 const persistedMessages = [...messagesRef.current, botMsg];
                 const completionMsg: Message = {
                     role: 'model',
-                    text: 'Thank you for this meaningful conversation. Your personalized reflection report is ready.',
+                    text: 'Thank you for this thoughtful reflection. Your coaching summary is ready.',
                     timestamp: new Date().toISOString()
                 };
 
@@ -649,6 +715,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         // Reset state and start new session
         setShowReportModal(false);
         setCompletedSession(null);
+        setIsContextCollapsed(false);
         replaceMessages([]);
         setTurnCountState(0);
         setSessionIdState(null);
@@ -666,6 +733,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             return;
         }
 
+        setIsContextCollapsed(false);
         setSelectedLearnerActivityId(nextActivityId);
         setActiveActivityRecord(nextActivity);
         window.location.reload();
@@ -707,8 +775,20 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                                 : 'No activity has been assigned to your account yet. Please contact your instructor.'}
                         </div>
                     )}
+                    {!actsAsInstructor && presenceCount > 0 && (
+                        <div className="activity-presence-indicator">
+                            {presenceCount === 1
+                                ? 'Another learner is active in this activity right now.'
+                                : `${presenceCount} other learners are active in this activity right now.`}
+                        </div>
+                    )}
                     {(actsAsInstructor || learnerActivities.length > 0 || isLearnerPreview) && (
-                        <ActivityContextHeader config={activityConfig} />
+                        <ActivityContextHeader
+                            config={activityConfig}
+                            collapsed={!actsAsInstructor && isContextCollapsed}
+                            showToggle={!actsAsInstructor}
+                            onToggle={() => setIsContextCollapsed(prev => !prev)}
+                        />
                     )}
                     <ProgressBar currentTurn={turnCount} totalTurns={MAX_TURNS} />
                 </div>
@@ -778,7 +858,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                                 ? 'Listening...'
                                 : isLoading
                                     ? (queuedCount > 0 ? `${queuedCount} queued message(s)...` : 'Type to queue your next message...')
-                                    : 'Share your thoughts...'
+                                    : 'Start by sharing what feels most challenging right now...'
                         }
                     />
                     <button

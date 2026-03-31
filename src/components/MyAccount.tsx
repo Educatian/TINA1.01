@@ -1,12 +1,12 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 import { saveAs } from 'file-saver';
 import { useAuth } from '../hooks/useAuth';
 import { getUserSessions } from '../hooks/useSession';
-import type { Session, Message } from '../types';
+import type { Message, Session } from '../types';
 
 export function MyAccount() {
     const { user, signOut } = useAuth();
@@ -19,7 +19,7 @@ export function MyAccount() {
 
     useEffect(() => {
         if (user) {
-            loadSessions();
+            void loadSessions();
         }
     }, [user]);
 
@@ -28,17 +28,6 @@ export function MyAccount() {
         const data = await getUserSessions(user.id);
         setSessions(data);
         setLoading(false);
-    };
-
-    const parseReport = (report: string | null) => {
-        if (!report) return null;
-        const sections: { title: string; content: string }[] = [];
-        const regex = /\*\*(\d+\).*?)\*\*([\s\S]*?)(?=\*\*\d+\)|$)/g;
-        let match;
-        while ((match = regex.exec(report)) !== null) {
-            sections.push({ title: match[1].trim(), content: match[2].trim() });
-        }
-        return sections.length > 0 ? sections : null;
     };
 
     const getMessages = (session: Session): Message[] => {
@@ -53,10 +42,9 @@ export function MyAccount() {
         return session.messages as Message[];
     };
 
-    // Download as TXT
     const downloadTXT = (session: Session) => {
         const messages = getMessages(session);
-        let content = `TINA Chat Log\n`;
+        let content = 'TINA Chat Log\n';
         content += `Date: ${new Date(session.created_at).toLocaleDateString()}\n`;
         content += `Turns: ${session.turn_count}\n`;
         content += `${'='.repeat(50)}\n\n`;
@@ -68,7 +56,7 @@ export function MyAccount() {
 
         if (session.summary_report) {
             content += `\n${'='.repeat(50)}\n`;
-            content += `REFLECTION REPORT\n${'='.repeat(50)}\n\n`;
+            content += `REFLECTION SUMMARY\n${'='.repeat(50)}\n\n`;
             content += session.summary_report;
         }
 
@@ -76,7 +64,6 @@ export function MyAccount() {
         saveAs(blob, `tina-chat-${new Date(session.created_at).toISOString().slice(0, 10)}.txt`);
     };
 
-    // Download as Word
     const downloadWord = async (session: Session) => {
         const messages = getMessages(session);
         const children: Paragraph[] = [];
@@ -98,9 +85,7 @@ export function MyAccount() {
         messages.forEach((msg) => {
             const role = msg.role === 'user' ? 'You' : 'TINA';
             children.push(new Paragraph({
-                children: [
-                    new TextRun({ text: `[${role}]`, bold: true }),
-                ],
+                children: [new TextRun({ text: `[${role}]`, bold: true })],
             }));
             children.push(new Paragraph({ text: msg.text }));
             children.push(new Paragraph({ text: '' }));
@@ -108,7 +93,7 @@ export function MyAccount() {
 
         if (session.summary_report) {
             children.push(new Paragraph({
-                text: 'Reflection Report',
+                text: 'Reflection Summary',
                 heading: HeadingLevel.HEADING_2,
             }));
             children.push(new Paragraph({ text: session.summary_report }));
@@ -122,47 +107,30 @@ export function MyAccount() {
         saveAs(blob, `tina-chat-${new Date(session.created_at).toISOString().slice(0, 10)}.docx`);
     };
 
-    // Download as PDF (report style)
     const downloadPDF = (session: Session) => {
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-        let yPosition = 0;
-        const margin = 25;
-        const maxWidth = pageWidth - margin * 2;
+        const maxWidth = pageWidth - 50;
+        let yPosition = 25;
 
-        // Cover page
-        doc.setFillColor(244, 208, 63);
-        doc.rect(0, 0, pageWidth, 60, 'F');
-        doc.setFillColor(243, 156, 18);
-        doc.rect(0, 60, pageWidth, 4, 'F');
-
-        doc.setFontSize(32);
+        doc.setFontSize(26);
         doc.setTextColor(44, 62, 80);
-        doc.setFont('helvetica', 'bold');
-        doc.text('TINA', pageWidth / 2, 35, { align: 'center' });
+        doc.text('TINA', pageWidth / 2, 24, { align: 'center' });
 
+        doc.setFontSize(12);
+        doc.text('Reflection Chat Log', pageWidth / 2, 34, { align: 'center' });
         doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.text('Teacher Identity Navigation Assistant', pageWidth / 2, 48, { align: 'center' });
-
-        doc.setFontSize(22);
-        doc.setFont('helvetica', 'bold');
-        doc.text('Chat Log', pageWidth / 2, 100, { align: 'center' });
-
-        const date = new Date(session.created_at).toLocaleDateString('en-US', {
-            year: 'numeric', month: 'long', day: 'numeric',
-        });
-        doc.setFontSize(11);
         doc.setTextColor(127, 140, 141);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Date: ${date} | Turns: ${session.turn_count}`, pageWidth / 2, 115, { align: 'center' });
+        doc.text(
+            `Date: ${new Date(session.created_at).toLocaleDateString()} | Turns: ${session.turn_count}`,
+            pageWidth / 2,
+            42,
+            { align: 'center' },
+        );
 
-        // Chat content
-        doc.addPage();
-        yPosition = 25;
-
+        yPosition = 55;
         const messages = getMessages(session);
+
         messages.forEach((msg) => {
             if (yPosition > 270) {
                 doc.addPage();
@@ -171,16 +139,10 @@ export function MyAccount() {
 
             const role = msg.role === 'user' ? 'You' : 'TINA';
             doc.setFontSize(10);
-            doc.setFont('helvetica', 'bold');
-            if (msg.role === 'user') {
-                doc.setTextColor(93, 173, 226);
-            } else {
-                doc.setTextColor(244, 208, 63);
-            }
-            doc.text(`[${role}]`, margin, yPosition);
+            doc.setTextColor(msg.role === 'user' ? 93 : 244, msg.role === 'user' ? 173 : 208, msg.role === 'user' ? 226 : 63);
+            doc.text(`[${role}]`, 25, yPosition);
             yPosition += 6;
 
-            doc.setFont('helvetica', 'normal');
             doc.setTextColor(44, 62, 80);
             const lines = doc.splitTextToSize(msg.text, maxWidth);
             lines.forEach((line: string) => {
@@ -188,7 +150,7 @@ export function MyAccount() {
                     doc.addPage();
                     yPosition = 25;
                 }
-                doc.text(line, margin, yPosition);
+                doc.text(line, 25, yPosition);
                 yPosition += 5;
             });
             yPosition += 8;
@@ -197,7 +159,6 @@ export function MyAccount() {
         doc.save(`tina-chat-${new Date(session.created_at).toISOString().slice(0, 10)}.pdf`);
     };
 
-    // Download as Screenshot
     const downloadScreenshot = async () => {
         if (!chatViewRef.current) return;
 
@@ -218,32 +179,29 @@ export function MyAccount() {
         navigate('/login');
     };
 
-    if (!user) {
-        return null;
-    }
+    if (!user) return null;
 
     return (
         <div className="account-container">
             <div className="account-header">
-                <h1>👤 My Account</h1>
-                <p>Welcome, {user.email}</p>
+                <h1>My Account</h1>
+                <p>Review your reflections, continue unfinished sessions, or export a copy for later.</p>
             </div>
 
-            {/* Chat Viewer Modal */}
             {viewingChat && (
                 <div className="modal-overlay" onClick={() => setViewingChat(null)}>
                     <div className="modal-content chat-viewer-modal" onClick={(e) => e.stopPropagation()}>
-                        <button className="modal-close" onClick={() => setViewingChat(null)}>×</button>
+                        <button className="modal-close" onClick={() => setViewingChat(null)}>x</button>
 
                         <div className="chat-viewer-header">
-                            <h2>📜 Chat History</h2>
+                            <h2>Chat History</h2>
                             <p>{new Date(viewingChat.created_at).toLocaleDateString()} • {viewingChat.turn_count} turns</p>
                         </div>
 
                         <div className="chat-viewer-content" ref={chatViewRef}>
                             {getMessages(viewingChat).map((msg, idx) => (
                                 <div key={idx} className={`chat-viewer-msg ${msg.role}`}>
-                                    <span className="msg-role">{msg.role === 'user' ? '👤 You' : '🍌 TINA'}</span>
+                                    <span className="msg-role">{msg.role === 'user' ? 'You' : 'TINA'}</span>
                                     <p>{msg.text}</p>
                                 </div>
                             ))}
@@ -251,16 +209,16 @@ export function MyAccount() {
 
                         <div className="chat-viewer-actions">
                             <button className="btn btn-secondary" onClick={() => downloadTXT(viewingChat)}>
-                                📄 TXT
+                                Export TXT
                             </button>
                             <button className="btn btn-secondary" onClick={() => downloadWord(viewingChat)}>
-                                📝 Word
+                                Export Word
                             </button>
                             <button className="btn btn-secondary" onClick={() => downloadPDF(viewingChat)}>
-                                📕 PDF
+                                Export PDF
                             </button>
                             <button className="btn btn-primary" onClick={downloadScreenshot}>
-                                📸 Screenshot
+                                Save Screenshot
                             </button>
                         </div>
                     </div>
@@ -268,18 +226,18 @@ export function MyAccount() {
             )}
 
             <div className="account-section">
-                <h2>📋 My Chat Sessions</h2>
+                <h2>My Reflection Sessions</h2>
                 <p style={{ color: '#6b7280', marginBottom: '20px' }}>
-                    View, load, and download your past TINA conversations
+                    Revisit past conversations, continue unfinished ones, or keep a copy of your work.
                 </p>
 
                 {loading ? (
                     <p>Loading your sessions...</p>
                 ) : sessions.length === 0 ? (
                     <div className="empty-state">
-                        <p>You haven't had any conversations yet.</p>
+                        <p>You have not started a reflection yet.</p>
                         <button className="btn btn-primary" onClick={() => navigate('/')}>
-                            Start Your First Session
+                            Start Your First Reflection
                         </button>
                     </div>
                 ) : (
@@ -288,35 +246,35 @@ export function MyAccount() {
                             <div key={session.id} className="session-card">
                                 <div className="session-info">
                                     <h3>
-                                        {session.completed_at ? '🎓' : '💬'} Session on {new Date(session.created_at).toLocaleDateString('en-US', {
-                                            year: 'numeric', month: 'short', day: 'numeric'
+                                        {session.completed_at ? 'Completed reflection' : 'In-progress reflection'} on{' '}
+                                        {new Date(session.created_at).toLocaleDateString('en-US', {
+                                            year: 'numeric',
+                                            month: 'short',
+                                            day: 'numeric',
                                         })}
                                     </h3>
                                     <p>
-                                        {session.turn_count} turns •
-                                        {session.completed_at ? ' Completed' : ' In Progress'}
+                                        {session.turn_count} turns • {session.completed_at ? 'Completed' : 'In progress'}
                                     </p>
                                 </div>
+
                                 <div className="session-actions">
-                                    <button
-                                        className="btn btn-primary"
-                                        onClick={() => setViewingChat(session)}
-                                    >
-                                        👁️ View Chat
+                                    <button className="btn btn-primary" onClick={() => setViewingChat(session)}>
+                                        View Chat
                                     </button>
                                     {!session.completed_at && (
                                         <button
                                             className="btn btn-accent"
                                             onClick={() => navigate('/', { state: { resumeSession: session } })}
                                         >
-                                            ▶️ Continue
+                                            Continue
                                         </button>
                                     )}
                                     <button
                                         className="btn btn-secondary"
                                         onClick={() => setSelectedSession(selectedSession?.id === session.id ? null : session)}
                                     >
-                                        {selectedSession?.id === session.id ? '🔼 Hide' : '🔽 Preview'}
+                                        {selectedSession?.id === session.id ? 'Hide Preview' : 'Preview'}
                                     </button>
                                 </div>
 
@@ -342,7 +300,7 @@ export function MyAccount() {
             </div>
 
             <div className="account-section">
-                <h2>⚙️ Account Settings</h2>
+                <h2>Account Settings</h2>
                 <div className="account-info">
                     <p><strong>Email:</strong> {user.email}</p>
                     <p><strong>Role:</strong> {user.role}</p>
