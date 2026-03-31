@@ -1,17 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { ActivityConfig, ActivityGoal, LearnerLevel, OutputFormat } from '../types';
 import {
     defaultActivityConfig,
     getActivityGoalLabel,
     getLearnerLevelLabel,
     getOutputFormatLabel,
-    resetActivityConfig,
-    saveActivityConfig,
 } from '../services/activityConfig';
 
 interface ActivityConfigFormProps {
     initialConfig: ActivityConfig;
-    onSave: (config: ActivityConfig) => void;
+    onSave: (config: ActivityConfig) => Promise<void> | void;
+    saveLabel?: string;
 }
 
 const activityGoals: ActivityGoal[] = [
@@ -37,9 +36,15 @@ const outputFormats: OutputFormat[] = [
     'checklist',
 ];
 
-export function ActivityConfigForm({ initialConfig, onSave }: ActivityConfigFormProps) {
+export function ActivityConfigForm({ initialConfig, onSave, saveLabel = 'Save Activity' }: ActivityConfigFormProps) {
     const [config, setConfig] = useState<ActivityConfig>(initialConfig);
     const [saveMessage, setSaveMessage] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        setConfig(initialConfig);
+        setSaveMessage('');
+    }, [initialConfig]);
 
     const guidanceSummary = useMemo(
         () => [
@@ -79,17 +84,24 @@ export function ActivityConfigForm({ initialConfig, onSave }: ActivityConfigForm
         setSaveMessage('');
     };
 
-    const handleSave = () => {
-        saveActivityConfig(config);
-        onSave(config);
-        setSaveMessage('Saved. New chat sessions will use this activity setup.');
+    const handleSave = async () => {
+        setIsSaving(true);
+        setSaveMessage('');
+
+        try {
+            await onSave(config);
+            setSaveMessage('Saved. New chat sessions will use this activity setup.');
+        } catch (error) {
+            console.error('Failed to save activity:', error);
+            setSaveMessage('Could not save this activity. Please try again.');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleReset = () => {
-        resetActivityConfig();
         setConfig(defaultActivityConfig);
-        onSave(defaultActivityConfig);
-        setSaveMessage('Reset to the default shared TINA activity.');
+        setSaveMessage('Reset the form to the default activity template. Save to apply it.');
     };
 
     return (
@@ -240,7 +252,9 @@ export function ActivityConfigForm({ initialConfig, onSave }: ActivityConfigForm
 
                 <div className="activity-form-actions">
                     <button className="btn btn-secondary" onClick={handleReset}>Reset Defaults</button>
-                    <button className="btn btn-primary" onClick={handleSave}>Save Activity Setup</button>
+                    <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
+                        {isSaving ? 'Saving...' : saveLabel}
+                    </button>
                 </div>
 
                 {saveMessage && <p className="activity-save-message">{saveMessage}</p>}

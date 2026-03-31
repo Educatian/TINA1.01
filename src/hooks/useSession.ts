@@ -1,11 +1,12 @@
 import { supabase } from '../lib/supabase';
-import type { Message, Session } from '../types';
+import type { Message, OutputFormat, Session, SessionOutput } from '../types';
 
-export async function createSession(userId: string): Promise<string | null> {
+export async function createSession(userId: string, activityId?: string | null): Promise<string | null> {
     const { data, error } = await supabase
         .from('sessions')
         .insert({
             user_id: userId,
+            activity_id: activityId || null,
             messages: [],
             turn_count: 0,
         })
@@ -94,4 +95,55 @@ export async function getAllSessions(): Promise<Session[]> {
 
     if (error) return [];
     return data as Session[];
+}
+
+export async function upsertSessionOutput(payload: {
+    sessionId: string;
+    activityId: string;
+    userId: string;
+    outputFormat: OutputFormat;
+    outputText: string;
+    submittedAt?: string;
+}): Promise<boolean> {
+    const { error } = await supabase
+        .from('session_outputs')
+        .upsert({
+            session_id: payload.sessionId,
+            activity_id: payload.activityId,
+            user_id: payload.userId,
+            output_format: payload.outputFormat,
+            output_text: payload.outputText,
+            submitted_at: payload.submittedAt || new Date().toISOString(),
+        }, { onConflict: 'session_id' });
+
+    if (error) {
+        console.error('Error saving session output:', error);
+        return false;
+    }
+
+    return true;
+}
+
+export async function getActivityOutputs(activityId: string): Promise<SessionOutput[]> {
+    const { data, error } = await supabase
+        .from('session_outputs')
+        .select('*')
+        .eq('activity_id', activityId)
+        .order('submitted_at', { ascending: false });
+
+    if (error) {
+        console.error('Error loading activity outputs:', error);
+        return [];
+    }
+
+    return (data || []).map((row: any) => ({
+        id: row.id,
+        sessionId: row.session_id,
+        activityId: row.activity_id,
+        userId: row.user_id,
+        outputFormat: row.output_format,
+        outputText: row.output_text,
+        submittedAt: row.submitted_at,
+        createdAt: row.created_at,
+    }));
 }

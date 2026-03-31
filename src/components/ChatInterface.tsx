@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { GoogleGenAI, Chat } from '@google/genai';
 import { useAuth } from '../hooks/useAuth';
-import { createSession, updateSession, completeSession, getSession } from '../hooks/useSession';
+import { createSession, updateSession, completeSession, getSession, upsertSessionOutput } from '../hooks/useSession';
 import { classifyTeacherCluster } from '../services/nlpService';
 import {
     initSessionTracking,
@@ -15,13 +15,17 @@ import {
 } from '../services/analyticsService';
 import {
     buildActivitySystemInstruction,
+    listAssignedLearnerActivities,
     loadActivityConfig,
+    resolveActivityForChat,
+    setActiveActivityRecord,
+    updateEnrollmentStatus,
 } from '../services/activityConfig';
 import { ReportModal } from './ReportModal';
 import { QuickReply, QuickReplyQuestion, detectQuickReply } from './QuickReply';
 import { ProgressBar } from './ProgressBar';
 import { ActivityContextHeader } from './ActivityContextHeader';
-import type { ActivityConfig, Message, Session } from '../types';
+import type { ActivityConfig, ActivityRecord, Message, Session } from '../types';
 
 // Enhanced TINA System Prompt with Critical Thinking
 const SYSTEM_INSTRUCTION = `
@@ -147,10 +151,13 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
-    const { user } = useAuth();
+    const { user, isAdmin } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const [activityConfig, setActivityConfig] = useState<ActivityConfig>(() => loadActivityConfig());
+    const [resolvedActivityId, setResolvedActivityId] = useState<string | null>(null);
+    const [learnerActivities, setLearnerActivities] = useState<ActivityRecord[]>([]);
+    const [selectedLearnerActivityId, setSelectedLearnerActivityId] = useState<string>('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -208,6 +215,25 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         };
     }, []);
 
+    useEffect(() => {
+        if (!user || isAdmin) {
+            setLearnerActivities([]);
+            return;
+        }
+
+        const loadLearnerActivities = async () => {
+            const activities = await listAssignedLearnerActivities(user.id);
+            setLearnerActivities(activities);
+            if (activities.length > 0) {
+                setSelectedLearnerActivityId(prev => prev || activities[0].id);
+            } else {
+                setSelectedLearnerActivityId('');
+            }
+        };
+
+        void loadLearnerActivities();
+    }, [user, isAdmin]);
+
     // Initialize Chat Session
     useEffect(() => {
         if (hasInitialized.current || !user) return;
@@ -215,8 +241,26 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
         const initChat = async () => {
             try {
-                const currentActivityConfig = loadActivityConfig();
+                const currentActivityRecord = await resolveActivityForChat({
+                    userId: user.id,
+                    isInstructor: isAdmin,
+                    preferredActivityId: resumeSession?.activity_id || undefined,
+                });
+                const currentActivityConfig = currentActivityRecord || loadActivityConfig();
                 setActivityConfig(currentActivityConfig);
+                setResolvedActivityId(currentActivityRecord?.id || null);
+                if (currentActivityRecord?.id) {
+                    setSelectedLearnerActivityId(currentActivityRecord.id);
+                }
+
+                if (!isAdmin && !currentActivityRecord) {
+                    replaceMessages([{
+                        role: 'model',
+                        text: 'No activity has been assigned to your account yet. Please contact your instructor before starting a session.',
+                        timestamp: new Date().toISOString(),
+                    }]);
+                    return;
+                }
 
                 // Check if resuming a session
                 if (resumeSession) {
@@ -262,11 +306,18 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 }
 
                 // Create new session in Supabase
-                const newSessionId = await createSession(user.id);
+                const newSessionId = await createSession(user.id, currentActivityRecord?.id || null);
                 if (newSessionId) {
                     setSessionIdState(newSessionId);
                     // Initialize analytics tracking
                     initSessionTracking();
+                    if (!isAdmin && currentActivityRecord?.id) {
+                        try {
+                            await updateEnrollmentStatus(currentActivityRecord.id, user.id, 'started');
+                        } catch (enrollmentError) {
+                            console.warn('Enrollment start update failed:', enrollmentError);
+                        }
+                    }
                 }
 
                 const ai = new GoogleGenAI({ apiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.API_KEY || '' });
@@ -301,7 +352,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         };
 
         initChat();
-    }, [user]);
+    }, [user, isAdmin]);
 
     // Initialize Speech Recognition
     useEffect(() => {
@@ -456,6 +507,24 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     layer3: layer3Keywords,
                 }, clusterResult);
 
+                if (resolvedActivityId) {
+                    await upsertSessionOutput({
+                        sessionId: sessionIdRef.current,
+                        activityId: resolvedActivityId,
+                        userId: user.id,
+                        outputFormat: activityConfig.outputFormat,
+                        outputText: botMsg.text,
+                    });
+
+                    if (!isAdmin) {
+                        try {
+                            await updateEnrollmentStatus(resolvedActivityId, user.id, 'completed');
+                        } catch (enrollmentError) {
+                            console.warn('Enrollment completion update failed:', enrollmentError);
+                        }
+                    }
+                }
+
                 await saveSessionAnalytics(sessionIdRef.current, 'completed');
 
                 const sessionData = await getSession(sessionIdRef.current);
@@ -558,6 +627,17 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         window.location.reload();
     };
 
+    const handleLearnerActivityChange = (nextActivityId: string) => {
+        const nextActivity = learnerActivities.find(activity => activity.id === nextActivityId);
+        if (!nextActivity) {
+            return;
+        }
+
+        setSelectedLearnerActivityId(nextActivityId);
+        setActiveActivityRecord(nextActivity);
+        window.location.reload();
+    };
+
     // Handle quick reply selection
     const handleQuickReplySelect = async (questionId: string, optionId: string, optionLabel: string) => {
         setQuickReplyResponsesState(prev => ({ ...prev, [questionId]: optionId }));
@@ -565,11 +645,36 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         queueOrSendMessage(optionLabel);
     };
 
+    const canInteract = Boolean(chatSession) && (isAdmin || learnerActivities.length > 0);
+
     return (
         <>
             <div className="chat-container">
                 <div className="chat-context-shell">
-                    <ActivityContextHeader config={activityConfig} />
+                    {!isAdmin && learnerActivities.length > 0 && (
+                        <div className="activity-selector-bar">
+                            <label htmlFor="learner-activity-select">Current activity</label>
+                            <select
+                                id="learner-activity-select"
+                                value={selectedLearnerActivityId}
+                                onChange={(e) => handleLearnerActivityChange(e.target.value)}
+                            >
+                                {learnerActivities.map(activity => (
+                                    <option key={activity.id} value={activity.id}>
+                                        {activity.title} · {activity.moduleLabel}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    {!isAdmin && learnerActivities.length === 0 && (
+                        <div className="activity-selector-empty">
+                            No activity has been assigned to your account yet. Please contact your instructor.
+                        </div>
+                    )}
+                    {(isAdmin || learnerActivities.length > 0) && (
+                        <ActivityContextHeader config={activityConfig} />
+                    )}
                     <ProgressBar currentTurn={turnCount} totalTurns={MAX_TURNS} />
                 </div>
 
@@ -617,6 +722,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         className={`mic-button ${isRecording ? 'recording' : ''}`}
                         onClick={handleMicClick}
                         title={isRecording ? 'Stop Recording' : 'Start Voice Input'}
+                        disabled={!canInteract}
                     >
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
@@ -629,8 +735,11 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
+                        disabled={!canInteract}
                         placeholder={
-                            isRecording
+                            !canInteract
+                                ? 'Waiting for an assigned activity...'
+                                : isRecording
                                 ? 'Listening...'
                                 : isLoading
                                     ? (queuedCount > 0 ? `${queuedCount} queued message(s)...` : 'Type to queue your next message...')
@@ -640,7 +749,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     <button
                         className="send-button"
                         onClick={handleSend}
-                        disabled={!input.trim()}
+                        disabled={!input.trim() || !canInteract}
                     >
                         {isLoading ? (queuedCount > 0 ? `QUEUE (${queuedCount})` : 'QUEUE') : 'SEND'}
                     </button>

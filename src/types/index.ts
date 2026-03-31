@@ -60,6 +60,33 @@ export interface ActivityConfig {
   instructorNote?: string;
 }
 
+export interface ActivityRecord extends ActivityConfig {
+  id: string;
+  instructorId: string;
+  isPublished: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ActivityEnrollment {
+  id: string;
+  activityId: string;
+  learnerId: string;
+  status: 'assigned' | 'started' | 'completed';
+  createdAt: string;
+}
+
+export interface SessionOutput {
+  id: string;
+  sessionId: string;
+  activityId: string;
+  userId: string;
+  outputFormat: OutputFormat;
+  outputText: string;
+  submittedAt: string | null;
+  createdAt: string;
+}
+
 export type TeacherCluster =
   | 'ethically_aware_hesitant'
   | 'motivated_limited_supported'
@@ -74,6 +101,7 @@ export interface ClusterScores {
 export interface Session {
   id: string;
   user_id: string;
+  activity_id?: string | null;
   messages: Message[];
   summary_report: string | null;
   layer1_keywords: string[];
