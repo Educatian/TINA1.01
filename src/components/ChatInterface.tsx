@@ -149,6 +149,7 @@ Start with Orientation now.
 `;
 
 const MAX_TURNS = 12;
+const SELF_TEST_LEARNER_EMAILS = new Set(['jewoong.moon@gmail.com']);
 
 interface ChatInterfaceProps {
     onSessionComplete: (sessionId: string) => void;
@@ -194,6 +195,9 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
     // Check for resume session from navigation state
     const resumeSession = (location.state as any)?.resumeSession as Session | undefined;
+    const canUseSelfTestActivities = Boolean(
+        user?.email && SELF_TEST_LEARNER_EMAILS.has(user.email.toLowerCase()),
+    );
 
     useEffect(() => {
         messagesRef.current = messages;
@@ -241,7 +245,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             return;
         }
 
-        const presenceActivityKey = resolvedActivityId || (isLearnerPreview ? 'preview-default' : null);
+        const presenceActivityKey = resolvedActivityId || ((isLearnerPreview || canUseSelfTestActivities) ? 'preview-default' : null);
         if (!presenceActivityKey) {
             setPresenceCount(0);
             return;
@@ -268,7 +272,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     await channel.track({
                         user_id: user.id,
                         activity_id: presenceActivityKey,
-                        role: isLearnerPreview ? 'learner-preview' : 'learner',
+                        role: (isLearnerPreview || canUseSelfTestActivities) ? 'learner-preview' : 'learner',
                         joined_at: new Date().toISOString(),
                     });
                 }
@@ -282,7 +286,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 presenceChannelRef.current = null;
             }
         };
-    }, [user, actsAsInstructor, resolvedActivityId, isLearnerPreview]);
+    }, [user, actsAsInstructor, resolvedActivityId, isLearnerPreview, canUseSelfTestActivities]);
 
     useEffect(() => {
         if (!user || actsAsInstructor) {
@@ -292,13 +296,13 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
         const loadLearnerActivities = async () => {
             let activities = await listAssignedLearnerActivities(user.id);
-            if (activities.length === 0 && isLearnerPreview) {
+            if (activities.length === 0 && (isLearnerPreview || canUseSelfTestActivities)) {
                 activities = await listInstructorActivities(user.id);
             }
             setLearnerActivities(activities);
             setPreviewNotice(
-                isLearnerPreview && activities.length === 0
-                    ? 'Learner preview is using the default TINA activity context because no saved activity was found yet.'
+                (isLearnerPreview || canUseSelfTestActivities) && activities.length === 0
+                    ? 'Learner self-test is using the default TINA activity context because no saved activity was found yet.'
                     : '',
             );
             if (activities.length > 0) {
@@ -309,7 +313,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         };
 
         void loadLearnerActivities();
-    }, [user, actsAsInstructor, isLearnerPreview]);
+    }, [user, actsAsInstructor, isLearnerPreview, canUseSelfTestActivities]);
 
     // Initialize Chat Session
     useEffect(() => {
@@ -324,7 +328,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     preferredActivityId: resumeSession?.activity_id || undefined,
                 });
 
-                if (!currentActivityRecord && isLearnerPreview) {
+                if (!currentActivityRecord && (isLearnerPreview || canUseSelfTestActivities)) {
                     const previewActivities = await listInstructorActivities(user.id);
                     currentActivityRecord = previewActivities.find(
                         (activity) => activity.id === (resumeSession?.activity_id || selectedLearnerActivityId),
@@ -342,7 +346,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     setSelectedLearnerActivityId(currentActivityRecord.id);
                 }
 
-                if (!actsAsInstructor && !currentActivityRecord && !isLearnerPreview) {
+                if (!actsAsInstructor && !currentActivityRecord && !isLearnerPreview && !canUseSelfTestActivities) {
                     replaceMessages([{
                         role: 'model',
                         text: 'No activity has been assigned to your account yet. Please contact your instructor before starting a session.',
@@ -351,8 +355,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     return;
                 }
 
-                if (!currentActivityRecord && isLearnerPreview) {
-                    setPreviewNotice('Learner preview is using the default TINA activity context because no saved activity was found yet.');
+                if (!currentActivityRecord && (isLearnerPreview || canUseSelfTestActivities)) {
+                    setPreviewNotice('Learner self-test is using the default TINA activity context because no saved activity was found yet.');
                 }
 
                 // Check if resuming a session
@@ -404,7 +408,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     setSessionIdState(newSessionId);
                     // Initialize analytics tracking
                     initSessionTracking();
-                    if (!actsAsInstructor && currentActivityRecord?.id && !isLearnerPreview) {
+                    if (!actsAsInstructor && currentActivityRecord?.id && !isLearnerPreview && !canUseSelfTestActivities) {
                         try {
                             await updateEnrollmentStatus(currentActivityRecord.id, user.id, 'started');
                         } catch (enrollmentError) {
@@ -445,7 +449,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         };
 
         initChat();
-    }, [user, actsAsInstructor, isLearnerPreview, selectedLearnerActivityId]);
+    }, [user, actsAsInstructor, isLearnerPreview, selectedLearnerActivityId, canUseSelfTestActivities]);
 
     // Initialize Speech Recognition
     useEffect(() => {
@@ -786,8 +790,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     )}
                     {!actsAsInstructor && learnerActivities.length === 0 && (
                         <div className="activity-selector-empty">
-                            {isLearnerPreview
-                                ? previewNotice || 'Learner preview is using the default TINA activity context.'
+                            {(isLearnerPreview || canUseSelfTestActivities)
+                                ? previewNotice || 'Learner self-test is using the default TINA activity context.'
                                 : 'No activity has been assigned to your account yet. Please contact your instructor.'}
                         </div>
                     )}
