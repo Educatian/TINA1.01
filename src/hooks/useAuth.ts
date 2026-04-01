@@ -3,14 +3,10 @@ import { supabase } from '../lib/supabase';
 import { clearRolePreview } from '../services/rolePreview';
 import type { User, AuthState } from '../types';
 
-const LOCAL_ADMIN_EMAILS = new Set(['jewoong.moon@gmail.com']);
+const OVERRIDE_ADMIN_EMAILS = new Set(['jewoong.moon@gmail.com']);
 
-function isLocalDevHost() {
-    if (typeof window === 'undefined') {
-        return false;
-    }
-
-    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+function isOverrideAdminEmail(email: string | undefined) {
+    return Boolean(email && OVERRIDE_ADMIN_EMAILS.has(email.toLowerCase()));
 }
 
 async function buildUser(sessionUser: {
@@ -41,7 +37,7 @@ async function buildUser(sessionUser: {
         email = profile.email;
     }
 
-    if (role !== 'admin' && email && isLocalDevHost() && LOCAL_ADMIN_EMAILS.has(email.toLowerCase())) {
+    if (role !== 'admin' && isOverrideAdminEmail(email)) {
         role = 'admin';
     }
 
@@ -134,7 +130,7 @@ export function useAuth() {
             const profilePayload = {
                 id: data.user.id,
                 email,
-                role: 'user',
+                role: isOverrideAdminEmail(email) ? 'admin' : 'user',
             };
 
             try {

@@ -3,6 +3,17 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { isLearnerPreviewEnabled, ROLE_PREVIEW_EVENT, setRolePreview } from '../services/rolePreview';
 
+function AdminDashboardIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="navbar-icon">
+            <path
+                d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5zm2 1.5v4h4V7zm6 0v4h6V7zM6 13v5h4v-5zm6 0v5h6v-5z"
+                fill="currentColor"
+            />
+        </svg>
+    );
+}
+
 export function Navbar() {
     const { user, signOut, isAdmin } = useAuth();
     const navigate = useNavigate();
@@ -49,25 +60,22 @@ export function Navbar() {
                 {isAdmin && (
                     <>
                         <button
-                            className="btn btn-secondary"
-                            style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                            className="btn btn-secondary navbar-button"
                             onClick={handleTogglePreview}
                         >
                             {isLearnerPreview ? 'Instructor Mode' : 'Learner Test Mode'}
                         </button>
-                        {location.pathname !== '/admin' && (
-                            <button
-                                className="btn btn-secondary"
-                                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-                                onClick={() => navigate('/admin')}
-                            >
-                                Dashboard
-                            </button>
-                        )}
+                        <button
+                            className={`btn btn-secondary navbar-icon-button ${location.pathname === '/admin' ? 'is-active' : ''}`}
+                            onClick={() => navigate('/admin')}
+                            aria-label="Open admin dashboard"
+                            title="Admin Dashboard"
+                        >
+                            <AdminDashboardIcon />
+                        </button>
                         {location.pathname === '/admin' && (
                             <button
-                                className="btn btn-secondary"
-                                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                                className="btn btn-secondary navbar-button"
                                 onClick={() => navigate('/')}
                             >
                                 New Session
@@ -78,8 +86,7 @@ export function Navbar() {
 
                 {location.pathname !== '/' && (
                     <button
-                        className="btn btn-secondary"
-                        style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                        className="btn btn-secondary navbar-button"
                         onClick={() => navigate('/')}
                     >
                         New Session
@@ -88,8 +95,7 @@ export function Navbar() {
 
                 {location.pathname !== '/account' && (
                     <button
-                        className="btn btn-secondary"
-                        style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                        className="btn btn-secondary navbar-button"
                         onClick={() => navigate('/account')}
                     >
                         My Account
@@ -102,8 +108,7 @@ export function Navbar() {
                 </div>
 
                 <button
-                    className="btn btn-secondary"
-                    style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                    className="btn btn-secondary navbar-button"
                     onClick={handleSignOut}
                 >
                     Sign Out
