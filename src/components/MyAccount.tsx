@@ -191,7 +191,13 @@ export function MyAccount() {
             {viewingChat && (
                 <div className="modal-overlay" onClick={() => setViewingChat(null)}>
                     <div className="modal-content chat-viewer-modal" onClick={(e) => e.stopPropagation()}>
-                        <button className="modal-close" onClick={() => setViewingChat(null)}>x</button>
+                        <button
+                            className="modal-close"
+                            onClick={() => setViewingChat(null)}
+                            aria-label="Close chat history"
+                        >
+                            ×
+                        </button>
 
                         <div className="chat-viewer-header">
                             <h2>Chat History</h2>
@@ -232,7 +238,7 @@ export function MyAccount() {
                 </p>
 
                 {loading ? (
-                    <p>Loading your sessions...</p>
+                    <p>Loading your sessions…</p>
                 ) : sessions.length === 0 ? (
                     <div className="empty-state">
                         <p>You have not started a reflection yet.</p>

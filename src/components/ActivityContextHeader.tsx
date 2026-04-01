@@ -40,6 +40,7 @@ export function ActivityContextHeader({
                         <h2>{config.title}</h2>
                     </div>
                     <div className="activity-context-collapsed-meta">
+                        <span>{config.estimatedMinutes || 10} min</span>
                         <span>{getOutputFormatLabel(config.outputFormat)}</span>
                         {showToggle && onToggle && (
                             <button
@@ -67,8 +68,7 @@ export function ActivityContextHeader({
                     <p className="activity-context-description">{config.learnerDescription}</p>
                 </div>
                 <div className="activity-context-meta">
-                    <span>{config.courseName}</span>
-                    <span>{config.moduleLabel}</span>
+                    <span>{config.topic}</span>
                     {showToggle && onToggle && (
                         <button
                             type="button"
@@ -82,8 +82,7 @@ export function ActivityContextHeader({
             </div>
 
             <div className="activity-context-summary">
-                <span><strong>Topic</strong> {config.topic}</span>
-                <span><strong>Learner Level</strong> {getLearnerLevelLabel(config.learnerLevel)}</span>
+                <span><strong>Designed for</strong> {getLearnerLevelLabel(config.learnerLevel)}</span>
                 <span><strong>Time</strong> {config.estimatedMinutes || 10} min</span>
                 <span><strong>Output</strong> {getOutputFormatLabel(config.outputFormat)}</span>
             </div>
@@ -91,18 +90,6 @@ export function ActivityContextHeader({
             <div className="activity-context-outcome">
                 <strong>You will leave with:</strong> {getOutputPromise(config.outputFormat)}.
             </div>
-
-            {config.scenario && (
-                <div className="activity-context-note">
-                    <strong>Scenario:</strong> {config.scenario}
-                </div>
-            )}
-
-            {config.instructorNote && (
-                <div className="activity-context-note">
-                    <strong>Instructor note:</strong> {config.instructorNote}
-                </div>
-            )}
 
             {ruleChips.length > 0 && (
                 <div className="activity-rule-list">
@@ -115,8 +102,19 @@ export function ActivityContextHeader({
                 </div>
             )}
 
+            {(config.scenario || config.instructorNote) && (
+                <div className="activity-context-note">
+                    {config.scenario && (
+                        <p><strong>Scenario:</strong> {config.scenario}</p>
+                    )}
+                    {config.instructorNote && (
+                        <p><strong>Instructor note:</strong> {config.instructorNote}</p>
+                    )}
+                </div>
+            )}
+
             <div className="activity-context-footer">
-                <p>Same TINA, guided for this activity.</p>
+                <p>The same TINA, framed for this learning activity.</p>
             </div>
         </div>
     );

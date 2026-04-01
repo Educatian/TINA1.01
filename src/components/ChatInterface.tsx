@@ -165,7 +165,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const [learnerActivities, setLearnerActivities] = useState<ActivityRecord[]>([]);
     const [selectedLearnerActivityId, setSelectedLearnerActivityId] = useState<string>('');
     const [previewNotice, setPreviewNotice] = useState('');
-    const [isContextCollapsed, setIsContextCollapsed] = useState(false);
+    const [isContextCollapsed, setIsContextCollapsed] = useState(!actsAsInstructor);
     const [presenceCount, setPresenceCount] = useState(0);
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
@@ -685,7 +685,11 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     };
     const handleMicClick = () => {
         if (!recognitionRef.current) {
-            alert('Voice input is not supported in this browser.');
+            appendMessages({
+                role: 'model',
+                text: 'Voice input is not available in this browser. You can keep typing here instead.',
+                timestamp: new Date().toISOString(),
+            });
             return;
         }
 
@@ -747,6 +751,18 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     };
 
     const canInteract = Boolean(chatSession) && (actsAsInstructor || learnerActivities.length > 0 || isLearnerPreview);
+    const composerHint = !canInteract
+        ? 'Choose an assigned activity to begin this reflection.'
+        : isRecording
+            ? 'Listening now. Speak naturally or stop recording to edit your message.'
+            : isLoading
+                ? queuedCount > 0
+                    ? `${queuedCount} queued message(s) will send after the current reply.`
+                    : 'TINA is responding. You can queue one short follow-up message.'
+                : 'Press Enter to send. Use the mic if speaking feels easier.';
+    const sendButtonLabel = isLoading
+        ? (queuedCount > 0 ? `Queue (${queuedCount})` : 'Queue')
+        : 'Send';
 
     return (
         <>
@@ -833,10 +849,12 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 </div>
 
                 <div className="chat-input-container">
+                    <label htmlFor="chat-message-input" className="sr-only">Message TINA</label>
                     <button
                         className={`mic-button ${isRecording ? 'recording' : ''}`}
                         onClick={handleMicClick}
                         title={isRecording ? 'Stop Recording' : 'Start Voice Input'}
+                        aria-label={isRecording ? 'Stop voice input' : 'Start voice input'}
                         disabled={!canInteract}
                     >
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -845,6 +863,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         </svg>
                     </button>
                     <input
+                        id="chat-message-input"
                         type="text"
                         className="chat-input"
                         value={input}
@@ -855,20 +874,22 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                             !canInteract
                                 ? 'Waiting for an assigned activity...'
                                 : isRecording
-                                ? 'Listening...'
+                                ? 'Listening…'
                                 : isLoading
-                                    ? (queuedCount > 0 ? `${queuedCount} queued message(s)...` : 'Type to queue your next message...')
+                                    ? (queuedCount > 0 ? `${queuedCount} queued message(s)…` : 'Type to queue your next message…')
                                     : 'Start by sharing what feels most challenging right now...'
                         }
                     />
                     <button
                         className="send-button"
                         onClick={handleSend}
+                        aria-label={sendButtonLabel}
                         disabled={!input.trim() || !canInteract}
                     >
-                        {isLoading ? (queuedCount > 0 ? `QUEUE (${queuedCount})` : 'QUEUE') : 'SEND'}
+                        {sendButtonLabel}
                     </button>
                 </div>
+                <p className="chat-input-helper" aria-live="polite">{composerHint}</p>
             </div>
 
             {showReportModal && completedSession && (

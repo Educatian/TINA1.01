@@ -217,7 +217,13 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                <button className="modal-close" onClick={onClose}>x</button>
+                <button
+                    className="modal-close"
+                    onClick={onClose}
+                    aria-label="Close reflection summary"
+                >
+                    ×
+                </button>
 
                 <div className="report-card">
                     <div className="report-emblem" style={{
@@ -238,39 +244,6 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                         Use this as a coaching debrief. It is meant to help you notice what stood out and decide what to try next.
                     </div>
 
-                    {clusterInfo && (
-                        <div
-                            className="cluster-badge"
-                            style={{
-                                backgroundColor: `${clusterInfo.color}20`,
-                                borderColor: clusterInfo.color,
-                                borderWidth: '2px',
-                                borderStyle: 'solid',
-                                borderRadius: '12px',
-                                padding: '16px 20px',
-                                marginBottom: '20px',
-                                textAlign: 'center',
-                            }}
-                        >
-                            <div
-                                style={{
-                                    fontWeight: 'bold',
-                                    fontSize: '1.1rem',
-                                    color: clusterInfo.color,
-                                    marginBottom: '8px',
-                                }}
-                            >
-                                {clusterInfo.title}
-                            </div>
-                            <div style={{ fontSize: '0.9rem', color: '#666' }}>
-                                {clusterInfo.description}
-                            </div>
-                            <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '8px' }}>
-                                Reflection lens only, not a grade or evaluation.
-                            </div>
-                        </div>
-                    )}
-
                     <div className="report-body">
                         {sections ? (
                             sections.map((section, idx) => (
@@ -286,6 +259,15 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                             </div>
                         )}
                     </div>
+
+                    {clusterInfo && (
+                        <div className="report-lens-card">
+                            <p className="report-lens-label">Optional reflection lens</p>
+                            <h3 style={{ color: clusterInfo.color }}>{clusterInfo.title}</h3>
+                            <p>{clusterInfo.description}</p>
+                            <p className="report-lens-note">Use this as a light interpretive lens, not a grade or fixed label.</p>
+                        </div>
+                    )}
 
                     <div className="report-footer">
                         <p>Session ID: {session.id.slice(0, 8)}...</p>

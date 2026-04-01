@@ -233,11 +233,22 @@ export function AdminDashboard() {
       { label: 'Completed', done: completedLearnerCount > 0 || submittedLearnerCount > 0 },
     ];
   }, [selectedActivity, enrollments.length, startedLearnerCount, completedLearnerCount, submittedLearnerCount]);
+  const workflowNextStep = useMemo(() => {
+    if (!selectedActivity) return 'Create or select an activity to begin.';
+    if (!selectedActivity.isPublished) return 'Publish this activity so learners can access it.';
+    if (enrollments.length === 0) return 'Assign at least one learner to this activity.';
+    if (startedLearnerCount === 0) return 'Invite learners to begin so you can monitor progress.';
+    if (submittedLearnerCount === 0) return 'Review live progress and wait for the first submitted reflection.';
+    return 'Review recent outputs and decide who may need follow-up.';
+  }, [selectedActivity, enrollments.length, startedLearnerCount, submittedLearnerCount]);
+  const workflowStatusLabel = selectedActivity
+    ? lifecycleSteps.find((step) => !step.done)?.label || 'Review'
+    : 'Start';
 
   if (loading) return <div className="admin-container"><p>Loading analytics...</p></div>;
 
   const tabs: Array<{ id: DashboardTab; label: string }> = [
-    { id: 'activity', label: 'Shared Activity Setup' },
+    { id: 'activity', label: 'Activity Studio' },
     { id: 'overview', label: 'Overview' },
     { id: 'analytics', label: 'NLP Analytics' },
     { id: 'users', label: 'User Management' },
@@ -245,9 +256,13 @@ export function AdminDashboard() {
 
   return (
     <div className="admin-container">
-      <div style={{ display: 'flex', gap: '0', marginBottom: '24px', borderBottom: '2px solid #E5E7EB', flexWrap: 'wrap' }}>
+      <div className="admin-tabs">
         {tabs.map((tab) => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ padding: '12px 24px', border: 'none', background: activeTab === tab.id ? '#F4D03F' : 'transparent', color: activeTab === tab.id ? '#2C3E50' : '#6b7280', fontWeight: activeTab === tab.id ? '600' : 'normal', cursor: 'pointer', borderBottom: activeTab === tab.id ? '3px solid #D4AC0D' : '3px solid transparent', fontSize: '0.95rem' }}>
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`admin-tab ${activeTab === tab.id ? 'admin-tab-active' : ''}`}
+          >
             {tab.label}
           </button>
         ))}
@@ -256,58 +271,56 @@ export function AdminDashboard() {
       {activeTab === 'activity' && (
         <div>
           <div className="admin-header">
-            <h1>Shared Activity Customization</h1>
-            <p style={{ color: '#6b7280', marginTop: '8px' }}>Create activities in Supabase, choose which one is active for your instructor chat, and publish learner-facing versions when they are ready.</p>
+            <h1>Activity Studio</h1>
+            <p className="admin-header-copy">Build one shared activity, publish it, assign learners, and monitor what needs attention next.</p>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: '24px', alignItems: 'start' }}>
-            <div style={{ background: '#fff', borderRadius: '16px', border: '2px solid #E5E7EB', boxShadow: '4px 4px 0px rgba(0,0,0,0.05)', padding: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ color: '#52796F' }}>Activities ({activities.length})</h3>
-                <button className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: '0.8rem' }} onClick={handleCreateNewActivity}>New Activity</button>
+          <div className="activity-studio-layout">
+            <div className="activity-studio-sidebar">
+              <div className="activity-studio-next-step">
+                <p className="activity-studio-next-step-label">
+                  Next step: {workflowStatusLabel}
+                </p>
+                <p className="activity-studio-next-step-copy">{workflowNextStep}</p>
               </div>
-              <div style={{ display: 'grid', gap: '10px' }}>
+              <div className="activity-studio-sidebar-header">
+                <h3>Activities ({activities.length})</h3>
+                <button className="btn btn-secondary activity-studio-compact-button" onClick={handleCreateNewActivity}>New Activity</button>
+              </div>
+              <div className="activity-studio-list">
                 {activities.map((activity) => (
-                  <div key={activity.id} style={{ border: selectedActivityId === activity.id ? '2px solid #84A98C' : '2px solid #E5E7EB', borderRadius: '12px', padding: '14px', background: selectedActivityId === activity.id ? '#F8FFF8' : '#fff' }}>
-                    <button onClick={() => handleSelectActivity(activity)} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                        <strong style={{ color: '#2C3E50' }}>{activity.title}</strong>
-                        <span style={{ background: activity.isPublished ? '#D1FAE5' : '#FEF3C7', color: activity.isPublished ? '#059669' : '#D97706', padding: '3px 8px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 700 }}>{activity.isPublished ? 'Published' : 'Draft'}</span>
+                  <div key={activity.id} className={`activity-studio-item ${selectedActivityId === activity.id ? 'activity-studio-item-active' : ''}`}>
+                    <button onClick={() => handleSelectActivity(activity)} className="activity-studio-select">
+                      <div className="activity-studio-item-top">
+                        <strong className="activity-studio-item-title">{activity.title}</strong>
+                        <span className={`activity-studio-status ${activity.isPublished ? 'activity-studio-status-published' : 'activity-studio-status-draft'}`}>{activity.isPublished ? 'Published' : 'Draft'}</span>
                       </div>
-                      <p style={{ color: '#6b7280', fontSize: '0.82rem', marginBottom: '8px' }}>{activity.courseName} · {activity.moduleLabel}</p>
+                      <p className="activity-studio-item-meta">{activity.courseName} / {activity.moduleLabel}</p>
                     </button>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleTogglePublished(activity)} disabled={activityBusyId === activity.id}>
+                    <div className="activity-studio-item-actions">
+                      <button className="btn btn-secondary activity-studio-mini-button" onClick={() => handleTogglePublished(activity)} disabled={activityBusyId === activity.id}>
                         {activityBusyId === activity.id ? 'Working...' : activity.isPublished ? 'Unpublish' : 'Publish'}
                       </button>
-                      <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleDeleteActivity(activity)} disabled={activityBusyId === activity.id}>Delete</button>
+                      <button className="btn btn-secondary activity-studio-mini-button" onClick={() => handleDeleteActivity(activity)} disabled={activityBusyId === activity.id}>Delete</button>
                     </div>
                   </div>
                 ))}
               </div>
-              {selectedActivity && <div style={{ marginTop: '16px', padding: '12px', background: '#FCF3CF', borderRadius: '10px', color: '#7F8C8D', fontSize: '0.85rem' }}>The selected activity is currently the active instructor chat context.</div>}
+              {selectedActivity && <div className="activity-studio-context-note">This selected activity is also your current instructor chat context.</div>}
               {selectedActivity && (
-                <div style={{ marginTop: '12px', display: 'grid', gap: '10px' }}>
+                <div className="activity-studio-sidebar-stack">
                   <button
-                    className="btn btn-primary"
-                    style={{ padding: '10px 14px', fontSize: '0.85rem' }}
+                    className="btn btn-primary activity-studio-preview-button"
                     onClick={() => handlePreviewLearnerExperience(selectedActivity)}
                   >
                     Preview Learner Experience
                   </button>
-                  <div style={{ padding: '12px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #E5E7EB' }}>
-                    <strong style={{ color: '#2C3E50', display: 'block', marginBottom: '8px' }}>Activity Lifecycle</strong>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  <div className="activity-studio-lifecycle">
+                    <strong className="activity-studio-lifecycle-title">Activity Lifecycle</strong>
+                    <div className="activity-studio-lifecycle-list">
                       {lifecycleSteps.map((step) => (
                         <span
                           key={step.label}
-                          style={{
-                            padding: '6px 10px',
-                            borderRadius: '999px',
-                            fontSize: '0.78rem',
-                            fontWeight: 700,
-                            background: step.done ? '#D1FAE5' : '#FEF3C7',
-                            color: step.done ? '#047857' : '#B45309',
-                          }}
+                          className={`activity-studio-lifecycle-chip ${step.done ? 'activity-studio-lifecycle-chip-done' : 'activity-studio-lifecycle-chip-next'}`}
                         >
                           {step.done ? 'Done' : 'Next'}: {step.label}
                         </span>
@@ -316,25 +329,25 @@ export function AdminDashboard() {
                   </div>
                 </div>
               )}
-              {activityStatus && <p style={{ marginTop: '14px', color: '#2C7A7B', fontSize: '0.88rem' }}>{activityStatus}</p>}
+              {activityStatus && <p className="activity-studio-status-message">{activityStatus}</p>}
             </div>
-            <div style={{ display: 'grid', gap: '20px' }}>
+            <div className="activity-studio-main">
               <ActivityConfigForm initialConfig={activityConfig} onSave={handleSaveActivity} saveLabel={selectedActivityId ? 'Update Activity' : 'Create Activity'} />
               <div className="activity-form-section">
-                <h3>Learner Assignment</h3>
-                <p>Assign the selected activity to learners. Admin accounts can also be assigned here for learner-mode testing in the same app.</p>
-                {!selectedActivityId && <p style={{ marginTop: '10px', color: '#6b7280' }}>Save or select an activity before managing enrollments.</p>}
+                <h3>Assign Learners</h3>
+                <p>Choose who should receive this activity. Admin accounts can also be assigned here for learner-mode testing in the same app.</p>
+                {!selectedActivityId && <p className="activity-support-copy">Save or select an activity before managing enrollments.</p>}
                 {selectedActivityId && (
-                  <div style={{ display: 'grid', gap: '10px', marginTop: '16px' }}>
+                  <div className="activity-enrollment-list">
                     {learnerCandidates.map((learner) => {
                       const isAssigned = enrolledLearnerIds.has(learner.id);
                       return (
-                        <div key={learner.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '12px 14px', background: '#fff', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+                        <div key={learner.id} className="activity-enrollment-item">
                           <div>
-                            <strong style={{ color: '#2C3E50' }}>{learner.email}</strong>
-                            <p style={{ color: '#6b7280', fontSize: '0.82rem' }}>{isAssigned ? 'Assigned to this activity' : 'Not assigned yet'}</p>
+                            <strong className="activity-enrollment-email">{learner.email}</strong>
+                            <p className="activity-enrollment-copy">{isAssigned ? 'Assigned to this activity' : 'Not assigned yet'}</p>
                           </div>
-                          <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.8rem' }} onClick={() => handleToggleEnrollment(learner.id)} disabled={enrollmentBusyId === learner.id}>
+                          <button className="btn btn-secondary activity-enrollment-button" onClick={() => handleToggleEnrollment(learner.id)} disabled={enrollmentBusyId === learner.id}>
                             {enrollmentBusyId === learner.id ? 'Saving...' : isAssigned ? 'Remove' : 'Assign'}
                           </button>
                         </div>
@@ -345,8 +358,8 @@ export function AdminDashboard() {
               </div>
               {selectedActivityId && (
                 <div className="activity-form-section">
-                  <h3>Activity Progress</h3>
-                  <div className="stats-grid" style={{ marginTop: '16px', marginBottom: '20px' }}>
+                  <h3>Monitor Activity</h3>
+                  <div className="stats-grid activity-stats-grid">
                     <div className="stat-card">
                       <h3>Assigned</h3>
                       <div className="value">{enrollments.length}</div>
@@ -373,8 +386,8 @@ export function AdminDashboard() {
                     </div>
                   </div>
 
-                  <h3 style={{ marginTop: '8px' }}>Instructional Signals</h3>
-                  <div className="stats-grid" style={{ marginTop: '16px', marginBottom: '20px' }}>
+                  <h3 className="activity-section-heading">What Needs Attention</h3>
+                  <div className="stats-grid activity-stats-grid">
                     <div className="stat-card">
                       <h3>Not Started</h3>
                       <div className="value">{notStartedLearnerCount}</div>
@@ -390,22 +403,22 @@ export function AdminDashboard() {
                   </div>
 
                   {(notStartedLearnerCount > 0 || followUpLearnerCount > 0) && (
-                    <div style={{ padding: '14px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '12px', marginBottom: '20px', color: '#92400E' }}>
-                      <strong style={{ display: 'block', marginBottom: '8px' }}>What needs attention next</strong>
+                    <div className="activity-warning-card">
+                      <strong className="activity-warning-title">What needs attention next</strong>
                       {notStartedLearnerCount > 0 && (
-                        <p style={{ marginBottom: '4px' }}>{notStartedLearnerCount} assigned learner(s) have not started this activity yet.</p>
+                        <p className="activity-warning-copy">{notStartedLearnerCount} assigned learner(s) have not started this activity yet.</p>
                       )}
                       {followUpLearnerCount > 0 && (
-                        <p>{followUpLearnerCount} learner(s) may need follow-up because they have short or unfinished sessions.</p>
+                        <p className="activity-warning-copy">{followUpLearnerCount} learner(s) may need follow-up because they have short or unfinished sessions.</p>
                       )}
                     </div>
                   )}
 
-                  <h3 style={{ marginTop: '8px' }}>Recent Outputs</h3>
+                  <h3 className="activity-section-heading">Recent Outputs</h3>
                   {activityOutputs.length === 0 ? (
-                    <p style={{ marginTop: '12px', color: '#6b7280' }}>No submitted outputs yet for this activity.</p>
+                    <p className="activity-support-copy">No submitted outputs yet for this activity.</p>
                   ) : (
-                    <div className="sessions-table" style={{ marginTop: '12px' }}>
+                    <div className="sessions-table activity-table-spaced">
                       <table>
                         <thead>
                           <tr>
@@ -423,7 +436,7 @@ export function AdminDashboard() {
                                 <td>{outputUser?.email || 'Unknown'}</td>
                                 <td>{output.outputFormat}</td>
                                 <td>{output.submittedAt ? new Date(output.submittedAt).toLocaleDateString() : '-'}</td>
-                                <td style={{ maxWidth: '280px', fontSize: '0.82rem', color: '#6b7280' }}>
+                                <td className="activity-output-preview">
                                   {output.outputText.slice(0, 120)}{output.outputText.length > 120 ? '...' : ''}
                                 </td>
                               </tr>
@@ -441,29 +454,29 @@ export function AdminDashboard() {
       )}
 
       {activeTab === 'overview' && (
-        <div style={{ display: 'flex', gap: '24px' }}>
-          <div style={{ width: '280px', flexShrink: 0, background: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '4px 4px 0px rgba(0,0,0,0.05)', border: '2px solid #E5E7EB', height: 'fit-content' }}>
-            <h3 style={{ marginBottom: '16px', color: '#52796F', fontSize: '1rem' }}>Users ({users.length})</h3>
-            <button onClick={() => setSelectedUserId(null)} style={{ width: '100%', padding: '12px', marginBottom: '8px', border: selectedUserId === null ? '2px solid #84A98C' : '2px solid #E5E7EB', borderRadius: '8px', background: selectedUserId === null ? '#CAD2C5' : '#fff', cursor: 'pointer', textAlign: 'left', fontWeight: selectedUserId === null ? '600' : 'normal' }}>
+        <div className="dashboard-split-layout">
+          <div className="dashboard-side-panel">
+            <h3 className="dashboard-side-title">Users ({users.length})</h3>
+            <button onClick={() => setSelectedUserId(null)} className={`dashboard-user-button ${selectedUserId === null ? 'dashboard-user-button-active' : ''}`}>
               All Users
-              <span style={{ float: 'right', fontSize: '0.85rem', color: '#6b7280' }}>{sessions.length} sessions</span>
+              <span className="dashboard-user-count">{sessions.length} sessions</span>
             </button>
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <div className="dashboard-user-list">
               {userSessionCounts.map(({ user: profile, sessionCount, completedCount }) => (
-                <button key={profile.id} onClick={() => setSelectedUserId(profile.id)} style={{ width: '100%', padding: '12px', marginBottom: '4px', border: selectedUserId === profile.id ? '2px solid #84A98C' : '2px solid #E5E7EB', borderRadius: '8px', background: selectedUserId === profile.id ? '#CAD2C5' : '#fff', cursor: 'pointer', textAlign: 'left', fontWeight: selectedUserId === profile.id ? '600' : 'normal' }}>
-                  <div style={{ fontSize: '0.85rem', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button key={profile.id} onClick={() => setSelectedUserId(profile.id)} className={`dashboard-user-button ${selectedUserId === profile.id ? 'dashboard-user-button-active' : ''}`}>
+                  <div className="dashboard-user-topline">
                     {profile.email}
-                    {profile.role === 'admin' && <span style={{ background: '#E74C3C', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem' }}>ADMIN</span>}
+                    {profile.role === 'admin' && <span className="dashboard-admin-tag">ADMIN</span>}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{sessionCount} sessions · {completedCount} completed</div>
+                  <div className="dashboard-user-subline">{sessionCount} sessions / {completedCount} completed</div>
                 </button>
               ))}
             </div>
           </div>
-          <div style={{ flex: 1 }}>
+          <div className="dashboard-main-panel">
             <div className="admin-header">
               <h1>TINA Analytics Dashboard</h1>
-              <p style={{ color: '#6b7280', marginTop: '8px' }}>{selectedUser ? `Viewing: ${selectedUser.email}` : 'All users overview'}</p>
+              <p className="admin-header-copy">{selectedUser ? `Viewing: ${selectedUser.email}` : 'All users overview'}</p>
             </div>
             <div className="stats-grid">
               <div className="stat-card"><h3>Sessions</h3><div className="value">{filteredSessions.length}</div></div>
@@ -471,12 +484,12 @@ export function AdminDashboard() {
               <div className="stat-card"><h3>Avg. Turns</h3><div className="value">{avgTurns}</div></div>
               <div className="stat-card"><h3>Completion Rate</h3><div className="value">{filteredSessions.length > 0 ? Math.round((completedSessions.length / filteredSessions.length) * 100) : 0}%</div></div>
             </div>
-            <h2 style={{ marginTop: '24px', marginBottom: '16px', color: '#52796F' }}>Recent Sessions</h2>
+            <h2 className="dashboard-section-title">Recent Sessions</h2>
             <div className="sessions-table">
               <table><thead><tr><th>User</th><th>Date</th><th>Turns</th><th>Status</th><th>Actions</th></tr></thead><tbody>
                 {filteredSessions.slice(0, 20).map((session) => {
                   const sessionUser = users.find((profile) => profile.id === session.user_id);
-                  return <tr key={session.id}><td style={{ fontSize: '0.85rem' }}>{sessionUser?.email || 'Unknown'}</td><td>{new Date(session.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td><td>{session.turn_count || 0}</td><td><span className={`status-badge ${session.completed_at ? 'status-completed' : 'status-pending'}`}>{session.completed_at ? 'Completed' : 'In Progress'}</span></td><td>{session.completed_at && <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={() => navigate(`/certificate/${session.id}`)}>View</button>}</td></tr>;
+                  return <tr key={session.id}><td className="table-cell-muted">{sessionUser?.email || 'Unknown'}</td><td>{new Date(session.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td><td>{session.turn_count || 0}</td><td><span className={`status-badge ${session.completed_at ? 'status-completed' : 'status-pending'}`}>{session.completed_at ? 'Completed' : 'In Progress'}</span></td><td>{session.completed_at && <button className="btn btn-secondary table-action-button" onClick={() => navigate(`/certificate/${session.id}`)}>View</button>}</td></tr>;
                 })}
               </tbody></table>
             </div>
@@ -486,27 +499,27 @@ export function AdminDashboard() {
 
       {activeTab === 'analytics' && (
         <div>
-          <h1 style={{ marginBottom: '24px' }}>NLP Analytics from session_analytics</h1>
+          <h1 className="dashboard-page-title">NLP Analytics from session_analytics</h1>
           <div className="stats-grid">
             <div className="stat-card"><h3>Total Records</h3><div className="value">{sessionAnalytics.length}</div></div>
-            <div className="stat-card"><h3>Avg Sentiment</h3><div className="value" style={{ color: parseFloat(avgSentiment) > 0.5 ? '#27AE60' : '#E74C3C' }}>{avgSentiment}</div></div>
-            <div className="stat-card"><h3>Avg Engagement</h3><div className="value" style={{ color: '#3498DB' }}>{avgEngagement}</div></div>
+            <div className="stat-card"><h3>Avg Sentiment</h3><div className={`value ${parseFloat(avgSentiment) > 0.5 ? 'metric-positive' : 'metric-danger'}`}>{avgSentiment}</div></div>
+            <div className="stat-card"><h3>Avg Engagement</h3><div className="value metric-info">{avgEngagement}</div></div>
             <div className="stat-card"><h3>Sessions Analyzed</h3><div className="value">{new Set(sessionAnalytics.map((a) => a.session_id)).size}</div></div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
-            <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', border: '2px solid #E5E7EB' }}>
-              <h3 style={{ marginBottom: '16px' }}>Emotion Distribution</h3>
-              {Object.entries(emotionCounts).slice(0, 6).map(([emotion, count]) => <div key={emotion} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}><span style={{ width: '100px', textTransform: 'capitalize' }}>{emotion}</span><div style={{ flex: 1, background: '#E5E7EB', borderRadius: '4px', height: '20px', marginRight: '8px' }}><div style={{ width: `${(count / sessionAnalytics.length) * 100}%`, background: emotion === 'joy' ? '#27AE60' : emotion === 'sadness' ? '#3498DB' : '#F39C12', height: '100%', borderRadius: '4px' }} /></div><span style={{ width: '40px', textAlign: 'right' }}>{count}</span></div>)}
+          <div className="analytics-grid">
+            <div className="analytics-panel">
+              <h3 className="analytics-panel-title">Emotion Distribution</h3>
+              {Object.entries(emotionCounts).slice(0, 6).map(([emotion, count]) => <div key={emotion} className="analytics-row"><span className="analytics-row-label">{emotion}</span><progress className={`analytics-progress analytics-progress-${getEmotionTone(emotion)}`} max={sessionAnalytics.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
             </div>
-            <div style={{ background: '#fff', borderRadius: '12px', padding: '24px', border: '2px solid #E5E7EB' }}>
-              <h3 style={{ marginBottom: '16px' }}>AI Attitude Distribution</h3>
-              {Object.entries(attitudeCounts).slice(0, 4).map(([attitude, count]) => <div key={attitude} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}><span style={{ width: '100px', textTransform: 'capitalize' }}>{attitude}</span><div style={{ flex: 1, background: '#E5E7EB', borderRadius: '4px', height: '20px', marginRight: '8px' }}><div style={{ width: `${(count / sessionAnalytics.length) * 100}%`, background: attitude === 'enthusiast' ? '#27AE60' : attitude === 'pragmatist' ? '#3498DB' : '#E74C3C', height: '100%', borderRadius: '4px' }} /></div><span style={{ width: '40px', textAlign: 'right' }}>{count}</span></div>)}
+            <div className="analytics-panel">
+              <h3 className="analytics-panel-title">AI Attitude Distribution</h3>
+              {Object.entries(attitudeCounts).slice(0, 4).map(([attitude, count]) => <div key={attitude} className="analytics-row"><span className="analytics-row-label">{attitude}</span><progress className={`analytics-progress analytics-progress-${getAttitudeTone(attitude)}`} max={sessionAnalytics.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
             </div>
           </div>
-          <h3 style={{ marginTop: '24px', marginBottom: '16px' }}>Raw Analytics Data (Last 50)</h3>
+          <h3 className="dashboard-section-title">Raw Analytics Data (Last 50)</h3>
           <div className="sessions-table">
             <table><thead><tr><th>Turn</th><th>Sentiment</th><th>Engagement</th><th>Emotion</th><th>AI Attitude</th><th>Efficacy</th><th>Date</th></tr></thead><tbody>
-              {sessionAnalytics.slice(0, 50).map((record) => <tr key={record.id}><td>{record.turn_number}</td><td style={{ color: record.sentiment_score > 0.5 ? '#27AE60' : '#E74C3C' }}>{record.sentiment_score?.toFixed(2) || '-'}</td><td>{record.engagement_score?.toFixed(2) || '-'}</td><td>{record.emotion_label || '-'}</td><td>{record.ai_attitude || '-'}</td><td>{record.self_efficacy_level || '-'}</td><td>{new Date(record.created_at).toLocaleDateString()}</td></tr>)}
+              {sessionAnalytics.slice(0, 50).map((record) => <tr key={record.id}><td>{record.turn_number}</td><td className={record.sentiment_score > 0.5 ? 'metric-positive-cell' : 'metric-danger-cell'}>{record.sentiment_score?.toFixed(2) || '-'}</td><td>{record.engagement_score?.toFixed(2) || '-'}</td><td>{record.emotion_label || '-'}</td><td>{record.ai_attitude || '-'}</td><td>{record.self_efficacy_level || '-'}</td><td>{new Date(record.created_at).toLocaleDateString()}</td></tr>)}
             </tbody></table>
           </div>
         </div>
@@ -514,13 +527,13 @@ export function AdminDashboard() {
 
       {activeTab === 'users' && (
         <div>
-          <h1 style={{ marginBottom: '24px' }}>User Management</h1>
-          <p style={{ marginBottom: '24px', color: '#6b7280' }}>Toggle admin status for users. Admins can access the dashboard and update shared activity settings.</p>
+          <h1 className="dashboard-page-title">User Management</h1>
+          <p className="dashboard-page-copy">Toggle admin status for users. Admins can access the dashboard and update shared activity settings.</p>
           <div className="sessions-table">
             <table><thead><tr><th>Email</th><th>Role</th><th>Sessions</th><th>Joined</th><th>Actions</th></tr></thead><tbody>
               {users.map((dashboardUser) => {
                 const sessionCount = sessions.filter((s) => s.user_id === dashboardUser.id).length;
-                return <tr key={dashboardUser.id}><td>{dashboardUser.email}</td><td><span style={{ background: dashboardUser.role === 'admin' ? '#E74C3C' : '#27AE60', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '600' }}>{dashboardUser.role?.toUpperCase() || 'USER'}</span></td><td>{sessionCount}</td><td>{new Date(dashboardUser.created_at).toLocaleDateString()}</td><td><button onClick={() => toggleAdminRole(dashboardUser.id, dashboardUser.role)} disabled={updatingRole === dashboardUser.id} style={{ padding: '8px 16px', background: dashboardUser.role === 'admin' ? '#E5E7EB' : '#F4D03F', border: 'none', borderRadius: '8px', cursor: updatingRole === dashboardUser.id ? 'wait' : 'pointer', fontWeight: '500' }}>{updatingRole === dashboardUser.id ? 'Updating...' : dashboardUser.role === 'admin' ? 'Remove Admin' : 'Make Admin'}</button></td></tr>;
+                return <tr key={dashboardUser.id}><td>{dashboardUser.email}</td><td><span className={`dashboard-role-pill ${dashboardUser.role === 'admin' ? 'dashboard-role-pill-admin' : 'dashboard-role-pill-user'}`}>{dashboardUser.role?.toUpperCase() || 'USER'}</span></td><td>{sessionCount}</td><td>{new Date(dashboardUser.created_at).toLocaleDateString()}</td><td><button onClick={() => toggleAdminRole(dashboardUser.id, dashboardUser.role)} disabled={updatingRole === dashboardUser.id} className={`dashboard-role-button ${dashboardUser.role === 'admin' ? 'dashboard-role-button-demote' : 'dashboard-role-button-promote'}`}>{updatingRole === dashboardUser.id ? 'Updating...' : dashboardUser.role === 'admin' ? 'Remove Admin' : 'Make Admin'}</button></td></tr>;
               })}
             </tbody></table>
           </div>

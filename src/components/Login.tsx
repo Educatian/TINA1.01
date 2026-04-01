@@ -77,6 +77,8 @@ export function Login() {
                         src="/tina-mascot.png"
                         alt="TINA Mascot"
                         className="login-mascot"
+                        width="160"
+                        height="160"
                     />
                     <h2>Welcome back</h2>
                     <p>Start a guided reflection in just a few minutes.</p>
@@ -99,6 +101,7 @@ export function Login() {
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             placeholder="your@email.com"
+                            autoComplete="email"
                             required
                         />
                     </div>
@@ -111,6 +114,7 @@ export function Login() {
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="Enter your password"
+                            autoComplete={isSignUp ? 'new-password' : 'current-password'}
                             required
                             minLength={6}
                         />
@@ -121,7 +125,7 @@ export function Login() {
                         className="btn btn-primary"
                         disabled={loading || !hasSupabaseConfig}
                     >
-                        {loading ? 'Loading...' : (isSignUp ? 'Sign Up' : 'Sign In')}
+                        {loading ? 'Loading…' : (isSignUp ? 'Sign Up' : 'Sign In')}
                     </button>
                 </form>
 
