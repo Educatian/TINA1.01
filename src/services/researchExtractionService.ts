@@ -178,6 +178,8 @@ const SESSION_SUMMARY_SCHEMA = {
 
 const TURN_SIGNAL_MODEL = 'gemini-2.5-flash';
 const SESSION_SUMMARY_MODEL = 'gemini-2.5-flash';
+const TURN_SIGNAL_PROMPT_VERSION = 'tina-reflection-turn-v1';
+const SESSION_SUMMARY_PROMPT_VERSION = 'tina-reflection-session-v1';
 
 function getGeminiApiKey() {
     return (
@@ -237,6 +239,68 @@ function buildActivityContext(activityConfig: ActivityConfig) {
         activityConfig.scenario ? `Scenario: ${activityConfig.scenario}` : '',
         activityConfig.instructorNote ? `Instructor note: ${activityConfig.instructorNote}` : '',
     ].filter(Boolean).join('\n');
+}
+
+function buildTurnReviewMeta(signal: TurnResearchSignal) {
+    const reasons: string[] = [];
+
+    const confidenceChecks = [
+        signal.reflective_depth.confidence,
+        signal.uncertainty.confidence,
+        signal.ai_stance.confidence,
+        signal.self_efficacy.confidence,
+        signal.next_step_readiness.confidence,
+    ];
+
+    if (confidenceChecks.some((value) => value < 0.6)) {
+        reasons.push('low_confidence_signal');
+    }
+
+    if (signal.uncertainty.level === 'high') {
+        reasons.push('persistent_uncertainty');
+    }
+
+    if (!signal.practicum_linkage.present) {
+        reasons.push('missing_practicum_link');
+    }
+
+    if (signal.ethical_concern.present && signal.next_step_readiness.level === 'not_ready') {
+        reasons.push('ethics_without_action');
+    }
+
+    if (signal.ai_stance.position === 'dependent' && !signal.critical_evaluation.present) {
+        reasons.push('dependency_without_checking');
+    }
+
+    return {
+        needsReview: reasons.length > 0,
+        reasons,
+    };
+}
+
+function buildSummaryReviewMeta(summary: SessionResearchSummary) {
+    const reasons: string[] = [];
+
+    if (summary.overall_confidence < 0.7) {
+        reasons.push('low_summary_confidence');
+    }
+
+    if (summary.risk_signals.includes('persistent_uncertainty')) {
+        reasons.push('persistent_uncertainty');
+    }
+
+    if (summary.risk_signals.includes('low_practicum_connection')) {
+        reasons.push('low_practicum_connection');
+    }
+
+    if (summary.risk_signals.includes('ethics_without_action')) {
+        reasons.push('ethics_without_action');
+    }
+
+    return {
+        needsReview: reasons.length > 0,
+        reasons,
+    };
 }
 
 function normalizeTurnSignal(
@@ -388,6 +452,7 @@ ${payload.utteranceText}
         }
 
         const normalized = normalizeTurnSignal(parsed, payload);
+        const reviewMeta = buildTurnReviewMeta(normalized);
 
         const { error } = await supabase.from('session_reflection_signals').upsert({
             session_id: normalized.session_id,
@@ -426,6 +491,11 @@ ${payload.utteranceText}
             next_step_readiness_level: normalized.next_step_readiness.level,
             next_step_readiness_confidence: normalized.next_step_readiness.confidence,
             next_step_readiness_evidence: normalized.next_step_readiness.evidence_span,
+            model_name: TURN_SIGNAL_MODEL,
+            prompt_version: TURN_SIGNAL_PROMPT_VERSION,
+            extraction_status: 'completed',
+            needs_review: reviewMeta.needsReview,
+            review_reason: reviewMeta.reasons,
             raw_extraction: normalized,
         }, { onConflict: 'session_id,turn_number' });
 
@@ -491,6 +561,7 @@ ${learnerTranscript}
         }
 
         const normalized = normalizeSessionSummary(parsed, payload);
+        const reviewMeta = buildSummaryReviewMeta(normalized);
 
         const { error } = await supabase.from('session_reflection_summaries').upsert({
             session_id: normalized.session_id,
@@ -506,6 +577,11 @@ ${learnerTranscript}
             recommended_support: normalized.recommended_support,
             summary_narrative: normalized.summary_narrative,
             overall_confidence: normalized.overall_confidence,
+            model_name: SESSION_SUMMARY_MODEL,
+            prompt_version: SESSION_SUMMARY_PROMPT_VERSION,
+            needs_review: reviewMeta.needsReview,
+            review_reason: reviewMeta.reasons,
+            review_status: reviewMeta.needsReview ? 'unreviewed' : 'cleared',
             raw_summary: normalized,
             updated_at: new Date().toISOString(),
         }, { onConflict: 'session_id' });

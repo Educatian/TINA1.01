@@ -17,26 +17,70 @@ interface SessionAnalyticsRecord {
 interface ReflectionSignalRecord {
   id: string;
   session_id: string;
+  user_id: string;
+  activity_id: string | null;
   turn_number: number;
+  utterance_text: string;
+  topic: string | null;
+  reflective_depth_level: string;
+  reflective_depth_confidence: number;
+  reflective_depth_evidence: string;
+  uncertainty_level: string;
+  uncertainty_confidence: number;
+  uncertainty_evidence: string;
+  ai_stance_position: string;
+  ai_stance_confidence: number;
+  ai_stance_evidence: string;
+  ethical_concern_present: boolean;
+  ethical_concern_themes?: string[];
+  ethical_concern_evidence?: string;
+  practicum_linkage_present: boolean;
+  practicum_linkage_context?: string | null;
+  practicum_linkage_evidence?: string;
+  next_step_readiness_level: string;
+  next_step_readiness_evidence?: string;
+  model_name?: string;
+  prompt_version?: string;
+  needs_review?: boolean;
+  review_reason?: string[];
+  reviewed_at?: string | null;
+  created_at: string;
+}
+interface ReflectionSummaryRecord {
+  id: string;
+  session_id: string;
+  user_id: string;
+  activity_id: string | null;
+  topic?: string | null;
+  session_arc: string;
+  dominant_tensions: string[];
+  risk_signals: string[];
+  recommended_support: string[];
+  overall_confidence: number;
+  summary_narrative?: string;
+  needs_review?: boolean;
+  review_reason?: string[];
+  review_status?: string;
+  review_notes?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+}
+interface HumanCodingRecord {
+  id: string;
+  session_id: string;
+  turn_number: number;
+  coder_id: string;
   reflective_depth_level: string;
   uncertainty_level: string;
   ai_stance_position: string;
   ethical_concern_present: boolean;
   practicum_linkage_present: boolean;
   next_step_readiness_level: string;
+  notes?: string | null;
   created_at: string;
+  updated_at: string;
 }
-interface ReflectionSummaryRecord {
-  id: string;
-  session_id: string;
-  session_arc: string;
-  dominant_tensions: string[];
-  risk_signals: string[];
-  recommended_support: string[];
-  overall_confidence: number;
-  created_at: string;
-}
-type DashboardTab = 'activity' | 'overview' | 'analytics' | 'research' | 'users';
+type DashboardTab = 'activity' | 'overview' | 'analytics' | 'research' | 'review' | 'coding' | 'users';
 
 export function AdminDashboard() {
   const navigate = useNavigate();
@@ -59,6 +103,21 @@ export function AdminDashboard() {
   const [liveLearnerCount, setLiveLearnerCount] = useState(0);
   const [reflectionSignals, setReflectionSignals] = useState<ReflectionSignalRecord[]>([]);
   const [reflectionSummaries, setReflectionSummaries] = useState<ReflectionSummaryRecord[]>([]);
+  const [humanCodingRecords, setHumanCodingRecords] = useState<HumanCodingRecord[]>([]);
+  const [selectedResearchSignalId, setSelectedResearchSignalId] = useState<string | null>(null);
+  const [selectedCodingSignalId, setSelectedCodingSignalId] = useState<string | null>(null);
+  const [reviewStatusMessage, setReviewStatusMessage] = useState('');
+  const [codingStatusMessage, setCodingStatusMessage] = useState('');
+  const [isSavingCoding, setIsSavingCoding] = useState(false);
+  const [codingDraft, setCodingDraft] = useState({
+    reflective_depth_level: 'emerging',
+    uncertainty_level: 'medium',
+    ai_stance_position: 'pragmatic',
+    ethical_concern_present: false,
+    practicum_linkage_present: false,
+    next_step_readiness_level: 'tentative',
+    notes: '',
+  });
 
   const loadDashboardData = async () => {
     const sessionsData = await getAllSessions();
@@ -68,16 +127,21 @@ export function AdminDashboard() {
       { data: analyticsData },
       { data: signalData },
       { data: summaryData },
+      humanCodingResponse,
     ] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('session_analytics').select('*').order('created_at', { ascending: false }).limit(500),
       supabase.from('session_reflection_signals').select('*').order('created_at', { ascending: false }).limit(500),
       supabase.from('session_reflection_summaries').select('*').order('created_at', { ascending: false }).limit(300),
+      supabase.from('human_coded_reflection_signals').select('*').order('updated_at', { ascending: false }).limit(300),
     ]);
     if (usersData) setUsers(usersData);
     if (analyticsData) setSessionAnalytics(analyticsData);
     if (signalData) setReflectionSignals(signalData as ReflectionSignalRecord[]);
     if (summaryData) setReflectionSummaries(summaryData as ReflectionSummaryRecord[]);
+    if (!humanCodingResponse.error && humanCodingResponse.data) {
+      setHumanCodingRecords(humanCodingResponse.data as HumanCodingRecord[]);
+    }
   };
 
   const loadActivities = async () => {
@@ -146,6 +210,45 @@ export function AdminDashboard() {
       }
     };
   }, [selectedActivityId, user]);
+
+  useEffect(() => {
+    if (!selectedResearchSignalId && reflectionSignals.length > 0) {
+      setSelectedResearchSignalId(reflectionSignals[0].id);
+    }
+  }, [reflectionSignals, selectedResearchSignalId]);
+
+  useEffect(() => {
+    if (!selectedCodingSignalId && reflectionSignals.length > 0) {
+      setSelectedCodingSignalId(reflectionSignals[0].id);
+    }
+  }, [reflectionSignals, selectedCodingSignalId]);
+
+  useEffect(() => {
+    if (existingHumanCoding) {
+      setCodingDraft({
+        reflective_depth_level: existingHumanCoding.reflective_depth_level,
+        uncertainty_level: existingHumanCoding.uncertainty_level,
+        ai_stance_position: existingHumanCoding.ai_stance_position,
+        ethical_concern_present: existingHumanCoding.ethical_concern_present,
+        practicum_linkage_present: existingHumanCoding.practicum_linkage_present,
+        next_step_readiness_level: existingHumanCoding.next_step_readiness_level,
+        notes: existingHumanCoding.notes || '',
+      });
+      return;
+    }
+
+    if (selectedCodingSignal) {
+      setCodingDraft({
+        reflective_depth_level: selectedCodingSignal.reflective_depth_level,
+        uncertainty_level: selectedCodingSignal.uncertainty_level,
+        ai_stance_position: selectedCodingSignal.ai_stance_position,
+        ethical_concern_present: selectedCodingSignal.ethical_concern_present,
+        practicum_linkage_present: selectedCodingSignal.practicum_linkage_present,
+        next_step_readiness_level: selectedCodingSignal.next_step_readiness_level,
+        notes: '',
+      });
+    }
+  }, [existingHumanCoding, selectedCodingSignal]);
 
   const toggleAdminRole = async (userId: string, currentRole: string) => {
     setUpdatingRole(userId);
@@ -237,6 +340,81 @@ export function AdminDashboard() {
     window.location.reload();
   };
 
+  const formatSignalLabel = (value: string) => value.replaceAll('_', ' ');
+
+  const handleMarkReviewResolved = async (source: 'signal' | 'summary', recordId: string) => {
+    if (!user) return;
+
+    const payload = {
+      needs_review: false,
+      reviewed_by: user.id,
+      reviewed_at: new Date().toISOString(),
+    };
+
+    const table = source === 'signal' ? 'session_reflection_signals' : 'session_reflection_summaries';
+    const summaryExtras = source === 'summary' ? { review_status: 'reviewed' } : {};
+
+    const { error } = await supabase.from(table).update({
+      ...payload,
+      ...summaryExtras,
+    }).eq('id', recordId);
+
+    if (error) {
+      console.error('Failed to resolve review item:', error);
+      setReviewStatusMessage('Unable to mark this item as reviewed yet.');
+      return;
+    }
+
+    if (source === 'signal') {
+      setReflectionSignals((prev) => prev.map((record) => record.id === recordId ? { ...record, needs_review: false, reviewed_at: payload.reviewed_at } : record));
+    } else {
+      setReflectionSummaries((prev) => prev.map((record) => record.id === recordId ? { ...record, needs_review: false, review_status: 'reviewed', reviewed_at: payload.reviewed_at } : record));
+    }
+
+    setReviewStatusMessage('Review item marked as resolved.');
+  };
+
+  const handleSaveHumanCoding = async () => {
+    if (!user || !selectedCodingSignal) return;
+
+    setIsSavingCoding(true);
+    setCodingStatusMessage('');
+
+    const { error, data } = await supabase
+      .from('human_coded_reflection_signals')
+      .upsert({
+        session_id: selectedCodingSignal.session_id,
+        turn_number: selectedCodingSignal.turn_number,
+        coder_id: user.id,
+        reflective_depth_level: codingDraft.reflective_depth_level,
+        uncertainty_level: codingDraft.uncertainty_level,
+        ai_stance_position: codingDraft.ai_stance_position,
+        ethical_concern_present: codingDraft.ethical_concern_present,
+        practicum_linkage_present: codingDraft.practicum_linkage_present,
+        next_step_readiness_level: codingDraft.next_step_readiness_level,
+        notes: codingDraft.notes.trim() || null,
+      }, { onConflict: 'session_id,turn_number,coder_id' })
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Failed to save human coding:', error);
+      setCodingStatusMessage('Unable to save human coding yet.');
+      setIsSavingCoding(false);
+      return;
+    }
+
+    if (data) {
+      setHumanCodingRecords((prev) => {
+        const others = prev.filter((record) => !(record.session_id === data.session_id && record.turn_number === data.turn_number && record.coder_id === data.coder_id));
+        return [data as HumanCodingRecord, ...others];
+      });
+    }
+
+    setCodingStatusMessage('Human coding saved.');
+    setIsSavingCoding(false);
+  };
+
   const filteredSessions = selectedUserId ? sessions.filter((s) => s.user_id === selectedUserId) : sessions;
   const completedSessions = filteredSessions.filter((s) => s.completed_at);
   const totalTurns = filteredSessions.reduce((sum, s) => sum + (s.turn_count || 0), 0);
@@ -305,6 +483,59 @@ export function AdminDashboard() {
     { label: 'Submitted Outputs', value: activityOutputs.length, tone: 'neutral' },
     { label: 'Live Now', value: liveLearnerCount, tone: liveLearnerCount > 0 ? 'positive' : 'neutral' },
   ];
+  const reviewQueue = useMemo(() => ([
+    ...reflectionSignals
+      .filter((record) => record.needs_review)
+      .map((record) => ({
+        id: `signal:${record.id}`,
+        source: 'signal' as const,
+        sourceId: record.id,
+        sessionId: record.session_id,
+        title: `Turn ${record.turn_number} needs review`,
+        subtitle: record.review_reason?.map(formatSignalLabel).join(', ') || 'signal review',
+        confidence: Math.min(
+          record.reflective_depth_confidence || 1,
+          record.uncertainty_confidence || 1,
+          record.ai_stance_confidence || 1,
+        ),
+        createdAt: record.created_at,
+      })),
+    ...reflectionSummaries
+      .filter((record) => record.needs_review)
+      .map((record) => ({
+        id: `summary:${record.id}`,
+        source: 'summary' as const,
+        sourceId: record.id,
+        sessionId: record.session_id,
+        title: formatSignalLabel(record.session_arc),
+        subtitle: record.review_reason?.map(formatSignalLabel).join(', ') || 'summary review',
+        confidence: record.overall_confidence || 0,
+        createdAt: record.created_at,
+      })),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())), [reflectionSignals, reflectionSummaries]);
+  const selectedResearchSignal = useMemo(
+    () => reflectionSignals.find((record) => record.id === selectedResearchSignalId) || reflectionSignals[0] || null,
+    [reflectionSignals, selectedResearchSignalId],
+  );
+  const selectedResearchSession = useMemo(
+    () => sessions.find((session) => session.id === selectedResearchSignal?.session_id) || null,
+    [sessions, selectedResearchSignal],
+  );
+  const selectedResearchSummary = useMemo(
+    () => reflectionSummaries.find((record) => record.session_id === selectedResearchSignal?.session_id) || null,
+    [reflectionSummaries, selectedResearchSignal],
+  );
+  const selectedCodingSignal = useMemo(
+    () => reflectionSignals.find((record) => record.id === selectedCodingSignalId) || reflectionSignals[0] || null,
+    [reflectionSignals, selectedCodingSignalId],
+  );
+  const existingHumanCoding = useMemo(
+    () => humanCodingRecords.find((record) => record.session_id === selectedCodingSignal?.session_id && record.turn_number === selectedCodingSignal?.turn_number && record.coder_id === user?.id) || null,
+    [humanCodingRecords, selectedCodingSignal, user],
+  );
+  const reviewedSignalCount = reflectionSignals.filter((record) => !record.needs_review).length;
+  const reviewedSummaryCount = reflectionSummaries.filter((record) => !record.needs_review).length;
+  const codingCoverageCount = new Set(humanCodingRecords.map((record) => `${record.session_id}:${record.turn_number}`)).size;
 
   if (loading) return <div className="admin-container"><p>Loading analytics...</p></div>;
 
@@ -313,6 +544,8 @@ export function AdminDashboard() {
     { id: 'overview', label: 'Overview' },
     { id: 'analytics', label: 'NLP Analytics' },
     { id: 'research', label: 'Research Signals' },
+    { id: 'review', label: 'Review Queue' },
+    { id: 'coding', label: 'Human Coding' },
     { id: 'users', label: 'User Management' },
   ];
 
@@ -652,7 +885,11 @@ export function AdminDashboard() {
                   </thead>
                   <tbody>
                     {reflectionSignals.slice(0, 12).map((record) => (
-                      <tr key={record.id}>
+                      <tr
+                        key={record.id}
+                        className={selectedResearchSignal?.id === record.id ? 'dashboard-row-active' : ''}
+                        onClick={() => setSelectedResearchSignalId(record.id)}
+                      >
                         <td>{record.turn_number}</td>
                         <td>{record.reflective_depth_level}</td>
                         <td>{record.uncertainty_level}</td>
@@ -685,6 +922,221 @@ export function AdminDashboard() {
                   </article>
                 ))}
               </div>
+            </section>
+          </div>
+          {selectedResearchSignal && (
+            <div className="dashboard-panel-grid">
+              <section className="dashboard-panel">
+                <div className="dashboard-panel-header">
+                  <h3 className="dashboard-panel-title">Signal Detail</h3>
+                  <span className="dashboard-panel-meta">Turn {selectedResearchSignal.turn_number}</span>
+                </div>
+                <p className="dashboard-detail-quote">{selectedResearchSignal.utterance_text}</p>
+                <div className="dashboard-detail-grid">
+                  <div className="dashboard-detail-card">
+                    <strong>Reflective depth</strong>
+                    <p>{selectedResearchSignal.reflective_depth_level} · confidence {selectedResearchSignal.reflective_depth_confidence?.toFixed(2) || '0.00'}</p>
+                    <span>{selectedResearchSignal.reflective_depth_evidence || 'No evidence span captured.'}</span>
+                  </div>
+                  <div className="dashboard-detail-card">
+                    <strong>Uncertainty</strong>
+                    <p>{selectedResearchSignal.uncertainty_level} · confidence {selectedResearchSignal.uncertainty_confidence?.toFixed(2) || '0.00'}</p>
+                    <span>{selectedResearchSignal.uncertainty_evidence || 'No evidence span captured.'}</span>
+                  </div>
+                  <div className="dashboard-detail-card">
+                    <strong>AI stance</strong>
+                    <p>{selectedResearchSignal.ai_stance_position} · confidence {selectedResearchSignal.ai_stance_confidence?.toFixed(2) || '0.00'}</p>
+                    <span>{selectedResearchSignal.ai_stance_evidence || 'No evidence span captured.'}</span>
+                  </div>
+                  <div className="dashboard-detail-card">
+                    <strong>Practicum linkage</strong>
+                    <p>{selectedResearchSignal.practicum_linkage_present ? (selectedResearchSignal.practicum_linkage_context || 'linked') : 'not detected'}</p>
+                    <span>{selectedResearchSignal.practicum_linkage_evidence || 'No evidence span captured.'}</span>
+                  </div>
+                </div>
+              </section>
+              <section className="dashboard-panel">
+                <div className="dashboard-panel-header">
+                  <h3 className="dashboard-panel-title">Session Context</h3>
+                  <span className="dashboard-panel-meta">{selectedResearchSummary?.session_arc ? formatSignalLabel(selectedResearchSummary.session_arc) : 'No session synthesis yet'}</span>
+                </div>
+                <p className="dashboard-signal-copy">{selectedResearchSummary?.summary_narrative || 'Run a full session to capture session-level synthesis.'}</p>
+                <div className="dashboard-chip-row">
+                  {(selectedResearchSummary?.dominant_tensions || []).slice(0, 4).map((tension) => (
+                    <span key={tension} className="dashboard-chip">{formatSignalLabel(tension)}</span>
+                  ))}
+                </div>
+                <div className="dashboard-transcript">
+                  {(selectedResearchSession?.messages || []).slice(-6).map((message, index) => (
+                    <div key={`${message.timestamp || index}-${message.role}`} className={`dashboard-transcript-line dashboard-transcript-line-${message.role}`}>
+                      <strong>{message.role === 'user' ? 'Learner' : 'TINA'}</strong>
+                      <span>{message.text}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'review' && (
+        <div className="admin-page-shell">
+          <div className="admin-header admin-header-tight">
+            <h1 className="dashboard-page-title">Review Queue</h1>
+            <p className="dashboard-page-copy">Focus on low-confidence or pedagogically important cases before using the signals in research interpretation.</p>
+          </div>
+          <div className="stats-grid stats-grid-compact">
+            <div className="stat-card stat-card-compact"><h3>Queue Size</h3><div className="value">{reviewQueue.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Reviewed Signals</h3><div className="value">{reviewedSignalCount}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Reviewed Summaries</h3><div className="value">{reviewedSummaryCount}</div></div>
+          </div>
+          {reviewStatusMessage && <p className="dashboard-status-message">{reviewStatusMessage}</p>}
+          <div className="dashboard-panel-grid">
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-header">
+                <h3 className="dashboard-panel-title">Items Needing Review</h3>
+                <span className="dashboard-panel-meta">{reviewQueue.length} open</span>
+              </div>
+              <div className="dashboard-signal-list admin-scroll-panel">
+                {reviewQueue.length === 0 && <p className="activity-support-copy">No review items are waiting right now.</p>}
+                {reviewQueue.map((item) => (
+                  <article key={item.id} className="dashboard-signal-card">
+                    <div className="dashboard-signal-topline">
+                      <strong>{item.title}</strong>
+                      <span className="dashboard-signal-confidence">confidence {item.confidence.toFixed(2)}</span>
+                    </div>
+                    <p className="dashboard-signal-copy">{item.subtitle}</p>
+                    <button className="btn btn-secondary table-action-button" onClick={() => handleMarkReviewResolved(item.source, item.sourceId)}>
+                      Mark Reviewed
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-header">
+                <h3 className="dashboard-panel-title">Review Guidelines</h3>
+                <span className="dashboard-panel-meta">Human oversight</span>
+              </div>
+              <div className="dashboard-guideline-list">
+                <div className="dashboard-guideline-card">
+                  <strong>Low confidence</strong>
+                  <p>Check whether the evidence span is actually sufficient for the inferred label.</p>
+                </div>
+                <div className="dashboard-guideline-card">
+                  <strong>Missing practicum link</strong>
+                  <p>Decide whether the learner is reflecting abstractly or whether the model missed contextual linkage.</p>
+                </div>
+                <div className="dashboard-guideline-card">
+                  <strong>Ethics without action</strong>
+                  <p>Review whether the learner raises a meaningful ethical issue but does not yet convert it into an actionable next step.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'coding' && (
+        <div className="admin-page-shell">
+          <div className="admin-header admin-header-tight">
+            <h1 className="dashboard-page-title">Human Coding</h1>
+            <p className="dashboard-page-copy">Capture instructor or researcher labels so you can compare AI-extracted signals with human interpretation.</p>
+          </div>
+          <div className="stats-grid stats-grid-compact">
+            <div className="stat-card stat-card-compact"><h3>Coded Turns</h3><div className="value">{codingCoverageCount}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Your Coding</h3><div className="value">{humanCodingRecords.filter((record) => record.coder_id === user?.id).length}</div></div>
+          </div>
+          {codingStatusMessage && <p className="dashboard-status-message">{codingStatusMessage}</p>}
+          <div className="dashboard-panel-grid">
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-header">
+                <h3 className="dashboard-panel-title">Choose A Turn</h3>
+                <span className="dashboard-panel-meta">Latest 20 signals</span>
+              </div>
+              <div className="dashboard-signal-list admin-scroll-panel">
+                {reflectionSignals.slice(0, 20).map((record) => (
+                  <article
+                    key={record.id}
+                    className={`dashboard-signal-card ${selectedCodingSignal?.id === record.id ? 'dashboard-signal-card-active' : ''}`}
+                    onClick={() => setSelectedCodingSignalId(record.id)}
+                  >
+                    <div className="dashboard-signal-topline">
+                      <strong>Turn {record.turn_number}</strong>
+                      <span className="dashboard-signal-confidence">{record.reflective_depth_level}</span>
+                    </div>
+                    <p className="dashboard-signal-copy">{record.utterance_text.slice(0, 140)}{record.utterance_text.length > 140 ? '...' : ''}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-header">
+                <h3 className="dashboard-panel-title">Coding Form</h3>
+                <span className="dashboard-panel-meta">{existingHumanCoding ? 'Existing coding loaded' : 'Seeded from AI signal'}</span>
+              </div>
+              {selectedCodingSignal ? (
+                <div className="dashboard-coding-form">
+                  <p className="dashboard-detail-quote">{selectedCodingSignal.utterance_text}</p>
+                  <label className="dashboard-field">
+                    <span>Reflective depth</span>
+                    <select value={codingDraft.reflective_depth_level} onChange={(event) => setCodingDraft((prev) => ({ ...prev, reflective_depth_level: event.target.value }))}>
+                      <option value="surface">surface</option>
+                      <option value="emerging">emerging</option>
+                      <option value="developed">developed</option>
+                    </select>
+                  </label>
+                  <label className="dashboard-field">
+                    <span>Uncertainty</span>
+                    <select value={codingDraft.uncertainty_level} onChange={(event) => setCodingDraft((prev) => ({ ...prev, uncertainty_level: event.target.value }))}>
+                      <option value="low">low</option>
+                      <option value="medium">medium</option>
+                      <option value="high">high</option>
+                    </select>
+                  </label>
+                  <label className="dashboard-field">
+                    <span>AI stance</span>
+                    <select value={codingDraft.ai_stance_position} onChange={(event) => setCodingDraft((prev) => ({ ...prev, ai_stance_position: event.target.value }))}>
+                      <option value="avoidant">avoidant</option>
+                      <option value="cautious">cautious</option>
+                      <option value="pragmatic">pragmatic</option>
+                      <option value="enthusiastic">enthusiastic</option>
+                      <option value="dependent">dependent</option>
+                    </select>
+                  </label>
+                  <label className="dashboard-field">
+                    <span>Next-step readiness</span>
+                    <select value={codingDraft.next_step_readiness_level} onChange={(event) => setCodingDraft((prev) => ({ ...prev, next_step_readiness_level: event.target.value }))}>
+                      <option value="not_ready">not ready</option>
+                      <option value="tentative">tentative</option>
+                      <option value="actionable">actionable</option>
+                    </select>
+                  </label>
+                  <label className="dashboard-checkbox">
+                    <input type="checkbox" checked={codingDraft.ethical_concern_present} onChange={(event) => setCodingDraft((prev) => ({ ...prev, ethical_concern_present: event.target.checked }))} />
+                    <span>Ethical concern present</span>
+                  </label>
+                  <label className="dashboard-checkbox">
+                    <input type="checkbox" checked={codingDraft.practicum_linkage_present} onChange={(event) => setCodingDraft((prev) => ({ ...prev, practicum_linkage_present: event.target.checked }))} />
+                    <span>Practicum linkage present</span>
+                  </label>
+                  <label className="dashboard-field">
+                    <span>Coding notes</span>
+                    <textarea
+                      value={codingDraft.notes}
+                      onChange={(event) => setCodingDraft((prev) => ({ ...prev, notes: event.target.value }))}
+                      rows={4}
+                      placeholder="Add brief reasoning for your coding decision."
+                    />
+                  </label>
+                  <button className="btn btn-primary" onClick={handleSaveHumanCoding} disabled={isSavingCoding}>
+                    {isSavingCoding ? 'Saving...' : 'Save Human Coding'}
+                  </button>
+                </div>
+              ) : (
+                <p className="activity-support-copy">No turn signals are available yet for coding.</p>
+              )}
             </section>
           </div>
         </div>
