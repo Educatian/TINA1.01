@@ -15,6 +15,10 @@ import {
     markVoiceInputUsed
 } from '../services/analyticsService';
 import {
+    extractAndSaveTurnResearchSignal,
+    synthesizeAndSaveSessionResearchSummary,
+} from '../services/researchExtractionService';
+import {
     buildActivitySystemInstruction,
     listAssignedLearnerActivities,
     listInstructorActivities,
@@ -535,6 +539,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         isProcessingRef.current = true;
         setIsLoading(true);
         setCurrentQuickReply(null);
+        const priorMessages = messagesRef.current;
 
         const userMsg: Message = {
             role: 'user',
@@ -563,6 +568,16 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 } catch (analyticsErr) {
                     console.warn('Analytics failed (non-blocking):', analyticsErr);
                 }
+
+                void extractAndSaveTurnResearchSignal({
+                    sessionId: sessionIdRef.current,
+                    userId: user.id,
+                    activityId: resolvedActivityId,
+                    turnNumber: newTurnCount,
+                    utteranceText: userMsg.text,
+                    recentMessages: priorMessages,
+                    activityConfig,
+                });
             }
 
             const reportPatterns = [
@@ -625,6 +640,13 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 }
 
                 await saveSessionAnalytics(sessionIdRef.current, 'completed');
+                void synthesizeAndSaveSessionResearchSummary({
+                    sessionId: sessionIdRef.current,
+                    userId: user.id,
+                    activityId: resolvedActivityId,
+                    activityConfig,
+                    messages: persistedMessages,
+                });
 
                 const sessionData = await getSession(sessionIdRef.current);
                 if (sessionData) {

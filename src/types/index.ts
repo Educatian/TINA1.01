@@ -167,3 +167,114 @@ export interface SessionAnalyticsData {
   all_concerns_mentioned: string[];
   layer_distribution: { layer1: number; layer2: number; layer3: number };
 }
+
+export type ReflectiveDepthLevel = 'surface' | 'emerging' | 'developed';
+export type UncertaintyLevel = 'low' | 'medium' | 'high';
+export type UncertaintyType = 'knowledge' | 'pedagogical' | 'ethical' | 'practicum';
+export type AIStancePosition = 'avoidant' | 'cautious' | 'pragmatic' | 'enthusiastic' | 'dependent';
+export type CriticalEvaluationMove =
+  | 'questioning_output'
+  | 'checking_bias'
+  | 'seeking_evidence'
+  | 'comparing_alternatives';
+export type PracticumContext =
+  | 'lesson planning'
+  | 'classroom management'
+  | 'assessment'
+  | 'feedback'
+  | 'ethics'
+  | 'general';
+export type EthicalConcernTheme =
+  | 'fairness'
+  | 'bias'
+  | 'privacy'
+  | 'transparency'
+  | 'student_dependency';
+export type SelfEfficacyLevel = 'low' | 'mixed' | 'high';
+export type NextStepReadinessLevel = 'not_ready' | 'tentative' | 'actionable';
+
+export interface ResearchDimension<T extends string> {
+  level?: T;
+  position?: T;
+  present?: boolean;
+  context?: string | null;
+  types?: string[];
+  moves?: string[];
+  themes?: string[];
+  confidence: number;
+  evidence_span: string;
+}
+
+export interface TurnResearchSignal {
+  session_id: string;
+  user_id: string;
+  activity_id?: string | null;
+  turn_number: number;
+  utterance_text: string;
+  learner_level?: LearnerLevel;
+  activity_goal?: ActivityGoal;
+  topic?: string;
+  reflective_depth: ResearchDimension<ReflectiveDepthLevel>;
+  uncertainty: ResearchDimension<UncertaintyLevel> & { types: UncertaintyType[] };
+  ai_stance: ResearchDimension<AIStancePosition> & { position: AIStancePosition };
+  critical_evaluation: ResearchDimension<'present'> & {
+    present: boolean;
+    moves: CriticalEvaluationMove[];
+  };
+  practicum_linkage: ResearchDimension<'present'> & {
+    present: boolean;
+    context: PracticumContext | null;
+  };
+  ethical_concern: ResearchDimension<'present'> & {
+    present: boolean;
+    themes: EthicalConcernTheme[];
+  };
+  self_efficacy: ResearchDimension<SelfEfficacyLevel>;
+  next_step_readiness: ResearchDimension<NextStepReadinessLevel>;
+  created_at?: string;
+}
+
+export type SessionArc =
+  | 'stuck_to_exploratory'
+  | 'exploratory_to_actionable'
+  | 'consistently_reflective'
+  | 'mixed_progression';
+
+export type DominantTension =
+  | 'efficiency_vs_authenticity'
+  | 'innovation_vs_ethics'
+  | 'confidence_vs_control'
+  | 'support_vs_dependency'
+  | 'access_vs_equity';
+
+export type RiskSignal =
+  | 'high_dependency_on_ai'
+  | 'low_critical_checking'
+  | 'low_practicum_connection'
+  | 'persistent_uncertainty'
+  | 'ethics_without_action';
+
+export type RecommendedSupport =
+  | 'prompt_for_counterexample'
+  | 'ask_for_classroom_evidence'
+  | 'invite_policy_reflection'
+  | 'encourage_small_practicum_experiment'
+  | 'surface_equity_tradeoffs';
+
+export interface SessionResearchSummary {
+  session_id: string;
+  user_id: string;
+  activity_id?: string | null;
+  learner_level?: LearnerLevel;
+  activity_goal?: ActivityGoal;
+  topic?: string;
+  session_arc: SessionArc;
+  dominant_tensions: DominantTension[];
+  growth_signals: string[];
+  risk_signals: RiskSignal[];
+  recommended_support: RecommendedSupport[];
+  summary_narrative: string;
+  overall_confidence: number;
+  created_at?: string;
+  updated_at?: string;
+}

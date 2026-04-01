@@ -14,7 +14,29 @@ interface SessionAnalyticsRecord {
   id: string; session_id: string; turn_number: number; sentiment_score: number; sentiment_label: string;
   engagement_score: number; emotion_label: string; discourse_type: string; self_efficacy_level: string; ai_attitude: string; created_at: string;
 }
-type DashboardTab = 'activity' | 'overview' | 'analytics' | 'users';
+interface ReflectionSignalRecord {
+  id: string;
+  session_id: string;
+  turn_number: number;
+  reflective_depth_level: string;
+  uncertainty_level: string;
+  ai_stance_position: string;
+  ethical_concern_present: boolean;
+  practicum_linkage_present: boolean;
+  next_step_readiness_level: string;
+  created_at: string;
+}
+interface ReflectionSummaryRecord {
+  id: string;
+  session_id: string;
+  session_arc: string;
+  dominant_tensions: string[];
+  risk_signals: string[];
+  recommended_support: string[];
+  overall_confidence: number;
+  created_at: string;
+}
+type DashboardTab = 'activity' | 'overview' | 'analytics' | 'research' | 'users';
 
 export function AdminDashboard() {
   const navigate = useNavigate();
@@ -35,14 +57,27 @@ export function AdminDashboard() {
   const [enrollmentBusyId, setEnrollmentBusyId] = useState<string | null>(null);
   const [activityOutputs, setActivityOutputs] = useState<SessionOutput[]>([]);
   const [liveLearnerCount, setLiveLearnerCount] = useState(0);
+  const [reflectionSignals, setReflectionSignals] = useState<ReflectionSignalRecord[]>([]);
+  const [reflectionSummaries, setReflectionSummaries] = useState<ReflectionSummaryRecord[]>([]);
 
   const loadDashboardData = async () => {
     const sessionsData = await getAllSessions();
     setSessions(sessionsData);
-    const { data: usersData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    const [
+      { data: usersData },
+      { data: analyticsData },
+      { data: signalData },
+      { data: summaryData },
+    ] = await Promise.all([
+      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('session_analytics').select('*').order('created_at', { ascending: false }).limit(500),
+      supabase.from('session_reflection_signals').select('*').order('created_at', { ascending: false }).limit(500),
+      supabase.from('session_reflection_summaries').select('*').order('created_at', { ascending: false }).limit(300),
+    ]);
     if (usersData) setUsers(usersData);
-    const { data: analyticsData } = await supabase.from('session_analytics').select('*').order('created_at', { ascending: false }).limit(500);
     if (analyticsData) setSessionAnalytics(analyticsData);
+    if (signalData) setReflectionSignals(signalData as ReflectionSignalRecord[]);
+    if (summaryData) setReflectionSummaries(summaryData as ReflectionSummaryRecord[]);
   };
 
   const loadActivities = async () => {
@@ -211,6 +246,16 @@ export function AdminDashboard() {
   const avgEngagement = sessionAnalytics.length > 0 ? (sessionAnalytics.reduce((sum, a) => sum + (a.engagement_score || 0), 0) / sessionAnalytics.length).toFixed(2) : '0.00';
   const emotionCounts = sessionAnalytics.reduce((acc, record) => { if (record.emotion_label) acc[record.emotion_label] = (acc[record.emotion_label] || 0) + 1; return acc; }, {} as Record<string, number>);
   const attitudeCounts = sessionAnalytics.reduce((acc, record) => { if (record.ai_attitude) acc[record.ai_attitude] = (acc[record.ai_attitude] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const depthCounts = reflectionSignals.reduce((acc, record) => { if (record.reflective_depth_level) acc[record.reflective_depth_level] = (acc[record.reflective_depth_level] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const uncertaintyCounts = reflectionSignals.reduce((acc, record) => { if (record.uncertainty_level) acc[record.uncertainty_level] = (acc[record.uncertainty_level] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const stanceCounts = reflectionSignals.reduce((acc, record) => { if (record.ai_stance_position) acc[record.ai_stance_position] = (acc[record.ai_stance_position] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const sessionArcCounts = reflectionSummaries.reduce((acc, record) => { if (record.session_arc) acc[record.session_arc] = (acc[record.session_arc] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const supportCounts = reflectionSummaries.reduce((acc, record) => {
+    record.recommended_support?.forEach((support) => {
+      acc[support] = (acc[support] || 0) + 1;
+    });
+    return acc;
+  }, {} as Record<string, number>);
   const selectedUser = users.find((profile) => profile.id === selectedUserId);
   const selectedActivity = useMemo(() => activities.find((activity) => activity.id === selectedActivityId) || null, [activities, selectedActivityId]);
   const learnerCandidates = useMemo(() => users, [users]);
@@ -244,6 +289,22 @@ export function AdminDashboard() {
   const workflowStatusLabel = selectedActivity
     ? lifecycleSteps.find((step) => !step.done)?.label || 'Review'
     : 'Start';
+  const avgResearchConfidence = reflectionSummaries.length > 0
+    ? (reflectionSummaries.reduce((sum, record) => sum + (record.overall_confidence || 0), 0) / reflectionSummaries.length).toFixed(2)
+    : '0.00';
+  const researchCoverage = new Set(reflectionSignals.map((record) => record.session_id)).size;
+  const ethicalConcernRate = reflectionSignals.length > 0
+    ? Math.round((reflectionSignals.filter((record) => record.ethical_concern_present).length / reflectionSignals.length) * 100)
+    : 0;
+  const practicumLinkRate = reflectionSignals.length > 0
+    ? Math.round((reflectionSignals.filter((record) => record.practicum_linkage_present).length / reflectionSignals.length) * 100)
+    : 0;
+  const adminBriefCards = [
+    { label: 'Activities', value: activities.length, tone: 'neutral' },
+    { label: 'Learners', value: users.filter((profile) => profile.role !== 'admin').length, tone: 'neutral' },
+    { label: 'Submitted Outputs', value: activityOutputs.length, tone: 'neutral' },
+    { label: 'Live Now', value: liveLearnerCount, tone: liveLearnerCount > 0 ? 'positive' : 'neutral' },
+  ];
 
   if (loading) return <div className="admin-container"><p>Loading analytics...</p></div>;
 
@@ -251,11 +312,28 @@ export function AdminDashboard() {
     { id: 'activity', label: 'Activity Studio' },
     { id: 'overview', label: 'Overview' },
     { id: 'analytics', label: 'NLP Analytics' },
+    { id: 'research', label: 'Research Signals' },
     { id: 'users', label: 'User Management' },
   ];
 
   return (
     <div className="admin-container">
+      <div className="admin-brief">
+        <div>
+          <p className="admin-brief-kicker">Admin workspace</p>
+          <h1 className="admin-brief-title">TINA Dashboard</h1>
+          <p className="admin-brief-copy">Compact monitoring for activities, learner progress, and research signals without forcing long page scans.</p>
+        </div>
+        <div className="admin-brief-grid">
+          {adminBriefCards.map((card) => (
+            <div key={card.label} className={`admin-brief-card admin-brief-card-${card.tone}`}>
+              <span className="admin-brief-label">{card.label}</span>
+              <strong className="admin-brief-value">{card.value}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="admin-tabs">
         {tabs.map((tab) => (
           <button
@@ -338,7 +416,7 @@ export function AdminDashboard() {
                 <p>Choose who should receive this activity. Admin accounts can also be assigned here for learner-mode testing in the same app.</p>
                 {!selectedActivityId && <p className="activity-support-copy">Save or select an activity before managing enrollments.</p>}
                 {selectedActivityId && (
-                  <div className="activity-enrollment-list">
+                  <div className="activity-enrollment-list admin-scroll-panel">
                     {learnerCandidates.map((learner) => {
                       const isAssigned = enrolledLearnerIds.has(learner.id);
                       return (
@@ -418,7 +496,7 @@ export function AdminDashboard() {
                   {activityOutputs.length === 0 ? (
                     <p className="activity-support-copy">No submitted outputs yet for this activity.</p>
                   ) : (
-                    <div className="sessions-table activity-table-spaced">
+                    <div className="sessions-table activity-table-spaced dashboard-table-shell">
                       <table>
                         <thead>
                           <tr>
@@ -475,17 +553,17 @@ export function AdminDashboard() {
           </div>
           <div className="dashboard-main-panel">
             <div className="admin-header">
-              <h1>TINA Analytics Dashboard</h1>
+              <h1>TINA Overview</h1>
               <p className="admin-header-copy">{selectedUser ? `Viewing: ${selectedUser.email}` : 'All users overview'}</p>
             </div>
-            <div className="stats-grid">
-              <div className="stat-card"><h3>Sessions</h3><div className="value">{filteredSessions.length}</div></div>
-              <div className="stat-card"><h3>Completed</h3><div className="value">{completedSessions.length}</div></div>
-              <div className="stat-card"><h3>Avg. Turns</h3><div className="value">{avgTurns}</div></div>
-              <div className="stat-card"><h3>Completion Rate</h3><div className="value">{filteredSessions.length > 0 ? Math.round((completedSessions.length / filteredSessions.length) * 100) : 0}%</div></div>
+            <div className="stats-grid stats-grid-compact">
+              <div className="stat-card stat-card-compact"><h3>Sessions</h3><div className="value">{filteredSessions.length}</div></div>
+              <div className="stat-card stat-card-compact"><h3>Completed</h3><div className="value">{completedSessions.length}</div></div>
+              <div className="stat-card stat-card-compact"><h3>Avg. Turns</h3><div className="value">{avgTurns}</div></div>
+              <div className="stat-card stat-card-compact"><h3>Completion Rate</h3><div className="value">{filteredSessions.length > 0 ? Math.round((completedSessions.length / filteredSessions.length) * 100) : 0}%</div></div>
             </div>
             <h2 className="dashboard-section-title">Recent Sessions</h2>
-            <div className="sessions-table">
+            <div className="sessions-table dashboard-table-shell">
               <table><thead><tr><th>User</th><th>Date</th><th>Turns</th><th>Status</th><th>Actions</th></tr></thead><tbody>
                 {filteredSessions.slice(0, 20).map((session) => {
                   const sessionUser = users.find((profile) => profile.id === session.user_id);
@@ -498,15 +576,18 @@ export function AdminDashboard() {
       )}
 
       {activeTab === 'analytics' && (
-        <div>
-          <h1 className="dashboard-page-title">NLP Analytics from session_analytics</h1>
-          <div className="stats-grid">
-            <div className="stat-card"><h3>Total Records</h3><div className="value">{sessionAnalytics.length}</div></div>
-            <div className="stat-card"><h3>Avg Sentiment</h3><div className={`value ${parseFloat(avgSentiment) > 0.5 ? 'metric-positive' : 'metric-danger'}`}>{avgSentiment}</div></div>
-            <div className="stat-card"><h3>Avg Engagement</h3><div className="value metric-info">{avgEngagement}</div></div>
-            <div className="stat-card"><h3>Sessions Analyzed</h3><div className="value">{new Set(sessionAnalytics.map((a) => a.session_id)).size}</div></div>
+        <div className="admin-page-shell">
+          <div className="admin-header admin-header-tight">
+            <h1 className="dashboard-page-title">NLP Analytics</h1>
+            <p className="dashboard-page-copy">Legacy session analytics from <code>session_analytics</code>, summarized in compact panels.</p>
           </div>
-          <div className="analytics-grid">
+          <div className="stats-grid stats-grid-compact">
+            <div className="stat-card stat-card-compact"><h3>Total Records</h3><div className="value">{sessionAnalytics.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Avg Sentiment</h3><div className={`value ${parseFloat(avgSentiment) > 0.5 ? 'metric-positive' : 'metric-danger'}`}>{avgSentiment}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Avg Engagement</h3><div className="value metric-info">{avgEngagement}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Sessions Analyzed</h3><div className="value">{new Set(sessionAnalytics.map((a) => a.session_id)).size}</div></div>
+          </div>
+          <div className="analytics-grid analytics-grid-compact">
             <div className="analytics-panel">
               <h3 className="analytics-panel-title">Emotion Distribution</h3>
               {Object.entries(emotionCounts).slice(0, 6).map(([emotion, count]) => <div key={emotion} className="analytics-row"><span className="analytics-row-label">{emotion}</span><progress className={`analytics-progress analytics-progress-${getEmotionTone(emotion)}`} max={sessionAnalytics.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
@@ -517,7 +598,7 @@ export function AdminDashboard() {
             </div>
           </div>
           <h3 className="dashboard-section-title">Raw Analytics Data (Last 50)</h3>
-          <div className="sessions-table">
+          <div className="sessions-table dashboard-table-shell">
             <table><thead><tr><th>Turn</th><th>Sentiment</th><th>Engagement</th><th>Emotion</th><th>AI Attitude</th><th>Efficacy</th><th>Date</th></tr></thead><tbody>
               {sessionAnalytics.slice(0, 50).map((record) => <tr key={record.id}><td>{record.turn_number}</td><td className={record.sentiment_score > 0.5 ? 'metric-positive-cell' : 'metric-danger-cell'}>{record.sentiment_score?.toFixed(2) || '-'}</td><td>{record.engagement_score?.toFixed(2) || '-'}</td><td>{record.emotion_label || '-'}</td><td>{record.ai_attitude || '-'}</td><td>{record.self_efficacy_level || '-'}</td><td>{new Date(record.created_at).toLocaleDateString()}</td></tr>)}
             </tbody></table>
@@ -525,11 +606,95 @@ export function AdminDashboard() {
         </div>
       )}
 
+      {activeTab === 'research' && (
+        <div className="admin-page-shell">
+          <div className="admin-header admin-header-tight">
+            <h1 className="dashboard-page-title">Research Signals</h1>
+            <p className="dashboard-page-copy">Gemini-structured reflection signals and session synthesis for preservice teacher learning analytics.</p>
+          </div>
+          <div className="stats-grid stats-grid-compact">
+            <div className="stat-card stat-card-compact"><h3>Turn Signals</h3><div className="value">{reflectionSignals.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Session Summaries</h3><div className="value">{reflectionSummaries.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Coverage</h3><div className="value">{researchCoverage}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Avg Confidence</h3><div className="value">{avgResearchConfidence}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Ethics Mention</h3><div className="value">{ethicalConcernRate}%</div></div>
+            <div className="stat-card stat-card-compact"><h3>Practicum Link</h3><div className="value">{practicumLinkRate}%</div></div>
+          </div>
+          <div className="analytics-grid analytics-grid-compact">
+            <div className="analytics-panel">
+              <h3 className="analytics-panel-title">Turn-Level Signals</h3>
+              {Object.entries(depthCounts).slice(0, 3).map(([depth, count]) => <div key={depth} className="analytics-row"><span className="analytics-row-label">{depth}</span><progress className="analytics-progress analytics-progress-info" max={reflectionSignals.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
+              {Object.entries(uncertaintyCounts).slice(0, 3).map(([level, count]) => <div key={level} className="analytics-row"><span className="analytics-row-label">{level} uncertainty</span><progress className="analytics-progress analytics-progress-warning" max={reflectionSignals.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
+              {Object.entries(stanceCounts).slice(0, 4).map(([stance, count]) => <div key={stance} className="analytics-row"><span className="analytics-row-label">{stance}</span><progress className="analytics-progress analytics-progress-positive" max={reflectionSignals.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
+            </div>
+            <div className="analytics-panel">
+              <h3 className="analytics-panel-title">Session Trajectory</h3>
+              {Object.entries(sessionArcCounts).slice(0, 4).map(([arc, count]) => <div key={arc} className="analytics-row"><span className="analytics-row-label">{arc.replaceAll('_', ' ')}</span><progress className="analytics-progress analytics-progress-info" max={reflectionSummaries.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
+              {Object.entries(supportCounts).slice(0, 5).map(([support, count]) => <div key={support} className="analytics-row"><span className="analytics-row-label">{support.replaceAll('_', ' ')}</span><progress className="analytics-progress analytics-progress-warning" max={reflectionSummaries.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
+            </div>
+          </div>
+          <div className="dashboard-panel-grid">
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-header">
+                <h3 className="dashboard-panel-title">Recent Turn Signals</h3>
+                <span className="dashboard-panel-meta">Last 12 learner turns</span>
+              </div>
+              <div className="sessions-table dashboard-table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Turn</th>
+                      <th>Depth</th>
+                      <th>Uncertainty</th>
+                      <th>AI Stance</th>
+                      <th>Ready</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reflectionSignals.slice(0, 12).map((record) => (
+                      <tr key={record.id}>
+                        <td>{record.turn_number}</td>
+                        <td>{record.reflective_depth_level}</td>
+                        <td>{record.uncertainty_level}</td>
+                        <td>{record.ai_stance_position}</td>
+                        <td>{record.next_step_readiness_level}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-header">
+                <h3 className="dashboard-panel-title">Recent Session Synthesis</h3>
+                <span className="dashboard-panel-meta">Latest trajectories</span>
+              </div>
+              <div className="dashboard-signal-list admin-scroll-panel">
+                {reflectionSummaries.slice(0, 8).map((record) => (
+                  <article key={record.id} className="dashboard-signal-card">
+                    <div className="dashboard-signal-topline">
+                      <strong>{record.session_arc.replaceAll('_', ' ')}</strong>
+                      <span className="dashboard-signal-confidence">confidence {record.overall_confidence?.toFixed(2) || '0.00'}</span>
+                    </div>
+                    <p className="dashboard-signal-copy">
+                      Support: {record.recommended_support?.slice(0, 2).map((item) => item.replaceAll('_', ' ')).join(', ') || 'none recorded'}
+                    </p>
+                    <p className="dashboard-signal-copy">
+                      Risks: {record.risk_signals?.slice(0, 2).map((item) => item.replaceAll('_', ' ')).join(', ') || 'none recorded'}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'users' && (
-        <div>
+        <div className="admin-page-shell">
           <h1 className="dashboard-page-title">User Management</h1>
           <p className="dashboard-page-copy">Toggle admin status for users. Admins can access the dashboard and update shared activity settings.</p>
-          <div className="sessions-table">
+          <div className="sessions-table dashboard-table-shell">
             <table><thead><tr><th>Email</th><th>Role</th><th>Sessions</th><th>Joined</th><th>Actions</th></tr></thead><tbody>
               {users.map((dashboardUser) => {
                 const sessionCount = sessions.filter((s) => s.user_id === dashboardUser.id).length;
