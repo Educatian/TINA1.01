@@ -154,6 +154,7 @@ Start with Orientation now.
 
 const MAX_TURNS = 12;
 const SELF_TEST_LEARNER_EMAILS = new Set(['jewoong.moon@gmail.com']);
+const DEFAULT_LEARNER_NOTICE = 'No instructor activity has been assigned yet, so you are starting with TINA\'s default reflection chat.';
 
 interface ChatInterfaceProps {
     onSessionComplete: (sessionId: string) => void;
@@ -249,11 +250,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             return;
         }
 
-        const presenceActivityKey = resolvedActivityId || ((isLearnerPreview || canUseSelfTestActivities) ? 'preview-default' : null);
-        if (!presenceActivityKey) {
-            setPresenceCount(0);
-            return;
-        }
+        const presenceActivityKey = resolvedActivityId || ((isLearnerPreview || canUseSelfTestActivities) ? 'preview-default' : 'default-reflection');
 
         const channel = supabase.channel(`activity-presence:${presenceActivityKey}`, {
             config: {
@@ -305,8 +302,10 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             }
             setLearnerActivities(activities);
             setPreviewNotice(
-                (isLearnerPreview || canUseSelfTestActivities) && activities.length === 0
-                    ? 'Learner self-test is using the default TINA activity context because no saved activity was found yet.'
+                activities.length === 0
+                    ? ((isLearnerPreview || canUseSelfTestActivities)
+                        ? 'Learner self-test is using the default TINA activity context because no saved activity was found yet.'
+                        : DEFAULT_LEARNER_NOTICE)
                     : '',
             );
             if (activities.length > 0) {
@@ -350,17 +349,12 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     setSelectedLearnerActivityId(currentActivityRecord.id);
                 }
 
-                if (!actsAsInstructor && !currentActivityRecord && !isLearnerPreview && !canUseSelfTestActivities) {
-                    replaceMessages([{
-                        role: 'model',
-                        text: 'No activity has been assigned to your account yet. Please contact your instructor before starting a session.',
-                        timestamp: new Date().toISOString(),
-                    }]);
-                    return;
-                }
-
-                if (!currentActivityRecord && (isLearnerPreview || canUseSelfTestActivities)) {
-                    setPreviewNotice('Learner self-test is using the default TINA activity context because no saved activity was found yet.');
+                if (!currentActivityRecord) {
+                    setPreviewNotice(
+                        (isLearnerPreview || canUseSelfTestActivities)
+                            ? 'Learner self-test is using the default TINA activity context because no saved activity was found yet.'
+                            : DEFAULT_LEARNER_NOTICE,
+                    );
                 }
 
                 // Check if resuming a session
@@ -776,9 +770,9 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         queueOrSendMessage(optionLabel);
     };
 
-    const canInteract = Boolean(chatSession) && (actsAsInstructor || learnerActivities.length > 0 || isLearnerPreview);
+    const canInteract = Boolean(chatSession);
     const composerHint = !canInteract
-        ? 'Choose an assigned activity to begin this reflection.'
+        ? 'Preparing your reflection chat...'
         : isRecording
             ? 'Listening now. Speak naturally or stop recording to edit your message.'
             : isLoading
@@ -814,7 +808,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         <div className="activity-selector-empty">
                             {(isLearnerPreview || canUseSelfTestActivities)
                                 ? previewNotice || 'Learner self-test is using the default TINA activity context.'
-                                : 'No activity has been assigned to your account yet. Please contact your instructor.'}
+                                : previewNotice || DEFAULT_LEARNER_NOTICE}
                         </div>
                     )}
                     {!actsAsInstructor && presenceCount > 0 && (
@@ -824,7 +818,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                                 : `${presenceCount} other learners are active in this activity right now.`}
                         </div>
                     )}
-                    {(actsAsInstructor || learnerActivities.length > 0 || isLearnerPreview) && (
+                    {Boolean(activityConfig) && (
                         <ActivityContextHeader
                             config={activityConfig}
                             collapsed={!actsAsInstructor && isContextCollapsed}
@@ -898,7 +892,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         disabled={!canInteract}
                         placeholder={
                             !canInteract
-                                ? 'Waiting for an assigned activity...'
+                                ? 'Preparing your chat...'
                                 : isRecording
                                 ? 'Listening…'
                                 : isLoading
