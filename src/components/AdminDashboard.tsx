@@ -89,6 +89,7 @@ export function AdminDashboard() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState('');
   const [activeTab, setActiveTab] = useState<DashboardTab>('activity');
   const [sessionAnalytics, setSessionAnalytics] = useState<SessionAnalyticsRecord[]>([]);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
@@ -122,25 +123,49 @@ export function AdminDashboard() {
   const loadDashboardData = async () => {
     const sessionsData = await getAllSessions();
     setSessions(sessionsData);
-    const [
-      { data: usersData },
-      { data: analyticsData },
-      { data: signalData },
-      { data: summaryData },
-      humanCodingResponse,
-    ] = await Promise.all([
+    const results = await Promise.allSettled([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('session_analytics').select('*').order('created_at', { ascending: false }).limit(500),
       supabase.from('session_reflection_signals').select('*').order('created_at', { ascending: false }).limit(500),
       supabase.from('session_reflection_summaries').select('*').order('created_at', { ascending: false }).limit(300),
       supabase.from('human_coded_reflection_signals').select('*').order('updated_at', { ascending: false }).limit(300),
     ]);
-    if (usersData) setUsers(usersData);
-    if (analyticsData) setSessionAnalytics(analyticsData);
-    if (signalData) setReflectionSignals(signalData as ReflectionSignalRecord[]);
-    if (summaryData) setReflectionSummaries(summaryData as ReflectionSummaryRecord[]);
-    if (!humanCodingResponse.error && humanCodingResponse.data) {
-      setHumanCodingRecords(humanCodingResponse.data as HumanCodingRecord[]);
+
+    const [usersResult, analyticsResult, signalsResult, summariesResult, codingResult] = results;
+
+    if (usersResult.status === 'fulfilled') {
+      if (usersResult.value.error) console.error('Failed to load users:', usersResult.value.error);
+      if (usersResult.value.data) setUsers(usersResult.value.data);
+    } else {
+      console.error('Failed to load users:', usersResult.reason);
+    }
+
+    if (analyticsResult.status === 'fulfilled') {
+      if (analyticsResult.value.error) console.error('Failed to load session analytics:', analyticsResult.value.error);
+      if (analyticsResult.value.data) setSessionAnalytics(analyticsResult.value.data);
+    } else {
+      console.error('Failed to load session analytics:', analyticsResult.reason);
+    }
+
+    if (signalsResult.status === 'fulfilled') {
+      if (signalsResult.value.error) console.error('Failed to load reflection signals:', signalsResult.value.error);
+      if (signalsResult.value.data) setReflectionSignals(signalsResult.value.data as ReflectionSignalRecord[]);
+    } else {
+      console.error('Failed to load reflection signals:', signalsResult.reason);
+    }
+
+    if (summariesResult.status === 'fulfilled') {
+      if (summariesResult.value.error) console.error('Failed to load reflection summaries:', summariesResult.value.error);
+      if (summariesResult.value.data) setReflectionSummaries(summariesResult.value.data as ReflectionSummaryRecord[]);
+    } else {
+      console.error('Failed to load reflection summaries:', summariesResult.reason);
+    }
+
+    if (codingResult.status === 'fulfilled') {
+      if (codingResult.value.error) console.error('Failed to load human coding records:', codingResult.value.error);
+      if (codingResult.value.data) setHumanCodingRecords(codingResult.value.data as HumanCodingRecord[]);
+    } else {
+      console.error('Failed to load human coding records:', codingResult.reason);
     }
   };
 
@@ -175,8 +200,15 @@ export function AdminDashboard() {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([loadDashboardData(), loadActivities()]);
-      setLoading(false);
+      setDashboardError('');
+      try {
+        await Promise.all([loadDashboardData(), loadActivities()]);
+      } catch (error) {
+        console.error('Failed to initialize admin dashboard:', error);
+        setDashboardError('Some dashboard data could not be loaded. You can still use the available sections while we retry.');
+      } finally {
+        setLoading(false);
+      }
     };
     void loadData();
   }, [user]);
@@ -566,6 +598,8 @@ export function AdminDashboard() {
           ))}
         </div>
       </div>
+
+      {dashboardError && <p className="dashboard-status-message">{dashboardError}</p>}
 
       <div className="admin-tabs">
         {tabs.map((tab) => (
