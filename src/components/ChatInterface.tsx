@@ -153,8 +153,26 @@ Start with Orientation now.
 `;
 
 const MAX_TURNS = 12;
+const CHAT_RESPONSE_TIMEOUT_MS = 30000;
 const SELF_TEST_LEARNER_EMAILS = new Set(['jewoong.moon@gmail.com']);
 const DEFAULT_LEARNER_NOTICE = 'No instructor activity has been assigned yet, so you are starting with TINA\'s default reflection chat.';
+const CHAT_TIMEOUT_ERROR = 'CHAT_TIMEOUT_ERROR';
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+
+        promise
+            .then((value) => {
+                window.clearTimeout(timeoutId);
+                resolve(value);
+            })
+            .catch((error) => {
+                window.clearTimeout(timeoutId);
+                reject(error);
+            });
+    });
+}
 
 interface ChatInterfaceProps {
     onSessionComplete: (sessionId: string) => void;
@@ -428,7 +446,11 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 setChatSession(chat);
 
                 setIsLoading(true);
-                const response = await chat.sendMessage({ message: 'Start the session.' });
+                const response = await withTimeout(
+                    chat.sendMessage({ message: 'Start the session.' }),
+                    CHAT_RESPONSE_TIMEOUT_MS,
+                    CHAT_TIMEOUT_ERROR,
+                );
                 const botMsg: Message = { role: 'model', text: response.text || '', timestamp: new Date().toISOString() };
                 replaceMessages([botMsg]);
                 setTurnCountState(1);
@@ -438,11 +460,14 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 if (newSessionId) {
                     await updateSession(newSessionId, [botMsg], 1);
                 }
-
-                setIsLoading(false);
             } catch (error) {
                 console.error('Error initializing chat:', error);
-                setMessages([{ role: 'model', text: 'Error initializing TINA. Please check API Key.', timestamp: new Date().toISOString() }]);
+                const timeoutMessage = error instanceof Error && error.message === CHAT_TIMEOUT_ERROR
+                    ? 'TINA is taking longer than expected to start. Please refresh the page or try again in a moment.'
+                    : 'Error initializing TINA. Please try again.';
+                replaceMessages([{ role: 'model', text: timeoutMessage, timestamp: new Date().toISOString() }]);
+            } finally {
+                setIsLoading(false);
             }
         };
 
@@ -546,7 +571,11 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         const userResponseTimeMs = getTurnResponseTime();
 
         try {
-            const response = await chatSession.sendMessage({ message: userMsg.text });
+            const response = await withTimeout(
+                chatSession.sendMessage({ message: userMsg.text }),
+                CHAT_RESPONSE_TIMEOUT_MS,
+                CHAT_TIMEOUT_ERROR,
+            );
             const botMsg: Message = {
                 role: 'model',
                 text: response.text || '',
@@ -667,7 +696,9 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             console.error('Error sending message:', error);
             appendMessages({
                 role: 'model',
-                text: 'Sorry, I encountered an error. Please try again.',
+                text: error instanceof Error && error.message === CHAT_TIMEOUT_ERROR
+                    ? 'TINA is taking longer than expected to respond. Please try sending that message again.'
+                    : 'Sorry, I encountered an error. Please try again.',
                 timestamp: new Date().toISOString()
             });
             startTurnTracking();

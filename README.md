@@ -9,7 +9,7 @@
 
 **An AI-powered reflective coaching tool for educators exploring their teacher identity and AI integration practices**
 
-[🚀 Live Demo](https://tina101.vercel.app) • [📖 Documentation](#features) • [🛠️ Setup](#getting-started)
+[🚀 Live Demo](https://tina-adie.netlify.app) • [📖 Documentation](#features) • [🛠️ Setup](#getting-started)
 
 </div>
 
@@ -65,7 +65,7 @@ NLP          │  HuggingFace Inference API
 Database     │  Supabase (PostgreSQL)
 Auth         │  Supabase Auth
 PDF          │  jsPDF
-Hosting      │  Vercel
+Hosting      │  Netlify
 ```
 
 ---
