@@ -1,0 +1,40 @@
+name: Supabase keep-alive
+
+# Prevents the Supabase free-tier project (qjopomljrjjhukhjiwwm) from
+# auto-pausing after 7 days of inactivity, which breaks login at
+# https://tina-adie1.netlify.app/login with "Failed to Fetch".
+#
+# A GET against PostgREST (/rest/v1/...) executes a real Postgres query,
+# so Supabase counts it as database activity. The anon key below is the
+# same public key shipped in the client JS bundle (RLS still applies);
+# it is not a secret.
+
+on:
+  schedule:
+    - cron: "0 6 */2 * *" # every 2 days at 06:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: https://qjopomljrjjhukhjiwwm.supabase.co
+      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqb3BvbWxqcmpqaHVraGppd3dtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU5MjQ1MzcsImV4cCI6MjA4MTUwMDUzN30.tkokgQK8Jn1PN1NREJJYIjfJOABZaGsT8WepTf1Fg3s
+    steps:
+      - name: Query Postgres via PostgREST (activities table)
+        run: |
+          set -euo pipefail
+          url="${SUPABASE_URL}/rest/v1/activities?select=*&limit=1"
+          echo "GET ${url}"
+          status=$(curl -sS -o /tmp/body.json -w '%{http_code}' \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            "${url}")
+          echo "HTTP ${status}"
+          echo "Body: $(head -c 300 /tmp/body.json)"
+          case "${status}" in
+            2*) echo "Supabase project is awake." ;;
+            *)  echo "::error::Keep-alive ping failed with HTTP ${status} — project may be paused. Restore it at https://supabase.com/dashboard/project/qjopomljrjjhukhjiwwm"
+                exit 1 ;;
+          esac
