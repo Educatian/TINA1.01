@@ -40,6 +40,39 @@ For the structured activity customization model that keeps one shared chatbot wh
 | 📈 **Progress Tracking** | Visual progress bar showing session advancement |
 | 🎤 **Voice Input** | Speech-to-text for natural conversation |
 | 📱 **Responsive Design** | Beautiful on desktop and mobile |
+| 🧭 **Coaching-Move Engine** | Deterministic per-turn coaching moves (Korthagen ALACT + reflection levels) that steer the LLM *and* log research telemetry |
+
+---
+
+## 🧭 Coaching-Move Engine & Research Telemetry
+
+TINA includes a **pure, unit-tested coaching engine** (`src/services/coachingEngine.ts`) built on a single design spine: **one "coaching move" is simultaneously (a) the control signal that shapes TINA's next reply and (b) the logged research event.** The LLM stays the *renderer*; move classification, selection, and verification live in deterministic code (the proven `classify → select → verify` pattern). The big TINA persona/system prompt is preserved — the engine only injects a short per-turn directive.
+
+**Theory anchor — Korthagen's ALACT reflection cycle**
+(Action → Looking back → Awareness of essential aspects → Creating alternative methods → Trial; Korthagen & Vasalos, 2005) plus **reflection levels** (technical → descriptive → critical; Van Manen, 1977; Hatton & Smith, 1995).
+
+**The 8-move taxonomy** (single source of truth, consumed by selector, renderer directive, logger, and dashboard):
+
+| Move | ALACT phase | Purpose |
+|------|-------------|---------|
+| `ELICIT_EXPERIENCE` | Action | Surface one concrete teaching moment |
+| `LOOK_BACK` | Looking back | What happened / was wanted / felt / done |
+| `NAME_ESSENTIAL` | Awareness | Name the identity / value / AI tension underneath |
+| `DEEPEN_REFLECTION` | Awareness | Push descriptive → critical when a turn stays shallow |
+| `REFRAME_PERSPECTIVE` | Creating alternatives | Invite an alternative framing |
+| `CONNECT_VALUE_TO_ACTION` | Trial | Connect the value to one small next move to try |
+| `AFFIRM_AND_HOLD` | Looking back | Validate + hold a safe, low-confusion space |
+| `CLOSE_SYNTHESIS` | Closing | End-of-session TINA Reflection Report |
+
+- **Classify** (`classifyTurn`): lightweight, LLM-free heuristics → `{reflectionLevel, contentTags, cues}`.
+- **Select** (`selectMove`): one move per turn; advances the ALACT cycle and lands `CLOSE_SYNTHESIS` near the ~10-minute / 12-turn budget; deepens shallow turns; holds the space on affect.
+- **Verify** (`verifyRender`): a "mirror, not advisor" guard. On a violation, one nudged regeneration, else pass-through — never blocks the live class.
+
+**Per-turn telemetry** is logged via `analyticsService.saveCoachingTurn(...)` into the `coaching_turns` table (the move log *is* the analytics data; no parallel pipeline). It is **best-effort and feature-detected**: with the SQL not applied or the engine disabled/erroring, the chat behaves exactly as before.
+
+- **Flag:** `VITE_COACHING_ENGINE` (defaults **on**; set `off` to disable).
+- **Schema:** apply `tina-coaching-telemetry.sql` in the Supabase SQL Editor (idempotent, additive-only, RLS = per-user + instructor-read). The Admin Dashboard **Coaching Moves** tab shows reflection-level distribution, move-usage frequency, ALACT phase coverage, per-learner reflection trajectory, and CSV/JSON export — with a clean "not enabled" state until the SQL is applied.
+- **Tests:** `npm test` (Node ≥ 22 `node --test`, 27 cases covering classify/select/verify, every move reachable, shallow → `DEEPEN_REFLECTION`, end-of-time → `CLOSE_SYNTHESIS`).
 
 ---
 

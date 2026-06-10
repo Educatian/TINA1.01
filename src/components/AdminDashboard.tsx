@@ -65,6 +65,23 @@ interface ReflectionSummaryRecord {
   reviewed_at?: string | null;
   created_at: string;
 }
+interface CoachingTurnRecord {
+  id: string;
+  session_id: string;
+  user_id: string;
+  activity_id: string | null;
+  turn_index: number;
+  move: string;
+  reflection_level: string;
+  content_tags: string[] | null;
+  alact_phase: string;
+  select_reason?: string | null;
+  verified?: boolean | null;
+  regenerated?: boolean | null;
+  latency_ms?: number | null;
+  text_len?: number | null;
+  created_at: string;
+}
 interface HumanCodingRecord {
   id: string;
   session_id: string;
@@ -80,7 +97,7 @@ interface HumanCodingRecord {
   created_at: string;
   updated_at: string;
 }
-type DashboardTab = 'activity' | 'overview' | 'analytics' | 'research' | 'review' | 'coding' | 'users';
+type DashboardTab = 'activity' | 'overview' | 'analytics' | 'research' | 'moves' | 'review' | 'coding' | 'users';
 
 export function AdminDashboard() {
   const navigate = useNavigate();
@@ -105,6 +122,9 @@ export function AdminDashboard() {
   const [reflectionSignals, setReflectionSignals] = useState<ReflectionSignalRecord[]>([]);
   const [reflectionSummaries, setReflectionSummaries] = useState<ReflectionSummaryRecord[]>([]);
   const [humanCodingRecords, setHumanCodingRecords] = useState<HumanCodingRecord[]>([]);
+  const [coachingTurns, setCoachingTurns] = useState<CoachingTurnRecord[]>([]);
+  const [coachingTelemetryEnabled, setCoachingTelemetryEnabled] = useState(true);
+  const [selectedMoveLearnerId, setSelectedMoveLearnerId] = useState<string | null>(null);
   const [selectedResearchSignalId, setSelectedResearchSignalId] = useState<string | null>(null);
   const [selectedCodingSignalId, setSelectedCodingSignalId] = useState<string | null>(null);
   const [reviewStatusMessage, setReviewStatusMessage] = useState('');
@@ -129,9 +149,10 @@ export function AdminDashboard() {
       supabase.from('session_reflection_signals').select('*').order('created_at', { ascending: false }).limit(500),
       supabase.from('session_reflection_summaries').select('*').order('created_at', { ascending: false }).limit(300),
       supabase.from('human_coded_reflection_signals').select('*').order('updated_at', { ascending: false }).limit(300),
+      supabase.from('coaching_turns').select('*').order('created_at', { ascending: false }).limit(2000),
     ]);
 
-    const [usersResult, analyticsResult, signalsResult, summariesResult, codingResult] = results;
+    const [usersResult, analyticsResult, signalsResult, summariesResult, codingResult, coachingResult] = results;
 
     if (usersResult.status === 'fulfilled') {
       if (usersResult.value.error) console.error('Failed to load users:', usersResult.value.error);
@@ -166,6 +187,29 @@ export function AdminDashboard() {
       if (codingResult.value.data) setHumanCodingRecords(codingResult.value.data as HumanCodingRecord[]);
     } else {
       console.error('Failed to load human coding records:', codingResult.reason);
+    }
+
+    // Coaching-move telemetry — feature-detected. If the table is not applied
+    // yet, show a clean "not enabled" state instead of an error.
+    if (coachingResult.status === 'fulfilled') {
+      const err = coachingResult.value.error as { code?: string; message?: string } | null;
+      if (err) {
+        const missing = err.code === '42P01' || err.code === 'PGRST205'
+          || (err.message || '').toLowerCase().includes('does not exist')
+          || (err.message || '').toLowerCase().includes('schema cache')
+          || (err.message || '').toLowerCase().includes('could not find the table');
+        if (missing) {
+          setCoachingTelemetryEnabled(false);
+        } else {
+          console.error('Failed to load coaching turns:', err);
+        }
+      } else if (coachingResult.value.data) {
+        setCoachingTelemetryEnabled(true);
+        setCoachingTurns(coachingResult.value.data as CoachingTurnRecord[]);
+      }
+    } else {
+      setCoachingTelemetryEnabled(false);
+      console.warn('Coaching turns not available:', coachingResult.reason);
     }
   };
 
@@ -569,6 +613,60 @@ export function AdminDashboard() {
   const reviewedSummaryCount = reflectionSummaries.filter((record) => !record.needs_review).length;
   const codingCoverageCount = new Set(humanCodingRecords.map((record) => `${record.session_id}:${record.turn_number}`)).size;
 
+  // ---- Coaching-move telemetry aggregates (the move log IS the analytics) ----
+  const moveCounts = useMemo(() => coachingTurns.reduce((acc, record) => {
+    if (record.move) acc[record.move] = (acc[record.move] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>), [coachingTurns]);
+  const moveLevelCounts = useMemo(() => coachingTurns.reduce((acc, record) => {
+    if (record.reflection_level) acc[record.reflection_level] = (acc[record.reflection_level] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>), [coachingTurns]);
+  const alactPhaseCounts = useMemo(() => coachingTurns.reduce((acc, record) => {
+    if (record.alact_phase) acc[record.alact_phase] = (acc[record.alact_phase] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>), [coachingTurns]);
+  const moveSessionCount = useMemo(() => new Set(coachingTurns.map((record) => record.session_id)).size, [coachingTurns]);
+  const moveRegenRate = useMemo(() => coachingTurns.length > 0
+    ? Math.round((coachingTurns.filter((record) => record.regenerated).length / coachingTurns.length) * 100)
+    : 0, [coachingTurns]);
+  const moveLearnerIds = useMemo(() => Array.from(new Set(coachingTurns.map((record) => record.user_id))), [coachingTurns]);
+  const ALACT_ORDER = ['action', 'looking_back', 'awareness', 'alternatives', 'trial', 'closing'];
+  const LEVEL_ORDER = ['technical', 'descriptive', 'critical'];
+  const trajectoryLearnerId = selectedMoveLearnerId || moveLearnerIds[0] || null;
+  const learnerTrajectory = useMemo(() => {
+    if (!trajectoryLearnerId) return [] as CoachingTurnRecord[];
+    return coachingTurns
+      .filter((record) => record.user_id === trajectoryLearnerId)
+      .slice()
+      .sort((a, b) => a.turn_index - b.turn_index);
+  }, [coachingTurns, trajectoryLearnerId]);
+
+  const downloadCoachingExport = (format: 'csv' | 'json') => {
+    if (coachingTurns.length === 0) return;
+    let blob: Blob;
+    let filename: string;
+    if (format === 'json') {
+      blob = new Blob([JSON.stringify(coachingTurns, null, 2)], { type: 'application/json' });
+      filename = 'tina-coaching-turns.json';
+    } else {
+      const cols = ['session_id', 'user_id', 'activity_id', 'turn_index', 'move', 'reflection_level', 'content_tags', 'alact_phase', 'select_reason', 'verified', 'regenerated', 'latency_ms', 'text_len', 'created_at'];
+      const escape = (value: unknown) => {
+        const s = Array.isArray(value) ? value.join('|') : value === null || value === undefined ? '' : String(value);
+        return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+      };
+      const rows = coachingTurns.map((record) => cols.map((c) => escape((record as Record<string, unknown>)[c])).join(','));
+      blob = new Blob([[cols.join(','), ...rows].join('\n')], { type: 'text/csv' });
+      filename = 'tina-coaching-turns.csv';
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) return <div className="admin-container"><p>Loading analytics...</p></div>;
 
   const tabs: Array<{ id: DashboardTab; label: string }> = [
@@ -576,6 +674,7 @@ export function AdminDashboard() {
     { id: 'overview', label: 'Overview' },
     { id: 'analytics', label: 'NLP Analytics' },
     { id: 'research', label: 'Research Signals' },
+    { id: 'moves', label: 'Coaching Moves' },
     { id: 'review', label: 'Review Queue' },
     { id: 'coding', label: 'Human Coding' },
     { id: 'users', label: 'User Management' },
@@ -1010,6 +1109,100 @@ export function AdminDashboard() {
                 </div>
               </section>
             </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'moves' && (
+        <div className="admin-page-shell">
+          <div className="admin-header admin-header-tight">
+            <h1 className="dashboard-page-title">Coaching Moves</h1>
+            <p className="dashboard-page-copy">Per-turn coaching moves from <code>coaching_turns</code>, grounded in Korthagen's ALACT cycle and reflection levels (technical / descriptive / critical). The move is both the LLM control signal and the logged research event.</p>
+          </div>
+          {!coachingTelemetryEnabled ? (
+            <div className="activity-warning-card">
+              <strong className="activity-warning-title">Coaching telemetry is not enabled yet</strong>
+              <p className="activity-warning-copy">Apply <code>tina-coaching-telemetry.sql</code> in the Supabase SQL Editor to create the <code>coaching_turns</code> table. Until then the chat runs exactly as before and no move data is captured.</p>
+            </div>
+          ) : coachingTurns.length === 0 ? (
+            <p className="activity-support-copy">No coaching turns recorded yet. They will appear here once learners run sessions with the coaching engine enabled.</p>
+          ) : (
+            <>
+              <div className="stats-grid stats-grid-compact">
+                <div className="stat-card stat-card-compact"><h3>Logged Turns</h3><div className="value">{coachingTurns.length}</div></div>
+                <div className="stat-card stat-card-compact"><h3>Sessions</h3><div className="value">{moveSessionCount}</div></div>
+                <div className="stat-card stat-card-compact"><h3>Critical Level</h3><div className="value">{moveLevelCounts.critical || 0}</div></div>
+                <div className="stat-card stat-card-compact"><h3>Regen Rate</h3><div className="value">{moveRegenRate}%</div></div>
+              </div>
+              <div className="dashboard-panel-grid">
+                <div className="analytics-panel">
+                  <h3 className="analytics-panel-title">Reflection-Level Distribution</h3>
+                  {LEVEL_ORDER.filter((level) => moveLevelCounts[level]).map((level) => (
+                    <div key={level} className="analytics-row">
+                      <span className="analytics-row-label">{level}</span>
+                      <progress className="analytics-progress analytics-progress-info" max={coachingTurns.length || 1} value={moveLevelCounts[level]} />
+                      <span className="analytics-row-value">{moveLevelCounts[level]}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="analytics-panel">
+                  <h3 className="analytics-panel-title">Move Usage Frequency</h3>
+                  {Object.entries(moveCounts).sort((a, b) => (b[1] as number) - (a[1] as number)).map(([move, count]) => (
+                    <div key={move} className="analytics-row">
+                      <span className="analytics-row-label">{move.replaceAll('_', ' ').toLowerCase()}</span>
+                      <progress className="analytics-progress analytics-progress-positive" max={coachingTurns.length || 1} value={count} />
+                      <span className="analytics-row-value">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="dashboard-panel-grid">
+                <div className="analytics-panel">
+                  <h3 className="analytics-panel-title">Session Arc — ALACT Phase Coverage</h3>
+                  {ALACT_ORDER.filter((phase) => alactPhaseCounts[phase]).map((phase) => (
+                    <div key={phase} className="analytics-row">
+                      <span className="analytics-row-label">{phase.replaceAll('_', ' ')}</span>
+                      <progress className="analytics-progress analytics-progress-warning" max={coachingTurns.length || 1} value={alactPhaseCounts[phase]} />
+                      <span className="analytics-row-value">{alactPhaseCounts[phase]}</span>
+                    </div>
+                  ))}
+                </div>
+                <section className="dashboard-panel">
+                  <div className="dashboard-panel-header">
+                    <h3 className="dashboard-panel-title">Reflection Trajectory</h3>
+                    <select value={trajectoryLearnerId || ''} onChange={(event) => setSelectedMoveLearnerId(event.target.value)}>
+                      {moveLearnerIds.map((learnerId) => {
+                        const learner = users.find((profile) => profile.id === learnerId);
+                        return <option key={learnerId} value={learnerId}>{learner?.email || learnerId.slice(0, 8)}</option>;
+                      })}
+                    </select>
+                  </div>
+                  <div className="sessions-table dashboard-table-shell">
+                    <table>
+                      <thead><tr><th>Turn</th><th>Level</th><th>Move</th><th>Phase</th></tr></thead>
+                      <tbody>
+                        {learnerTrajectory.map((record) => (
+                          <tr key={record.id}>
+                            <td>{record.turn_index}</td>
+                            <td>{record.reflection_level}</td>
+                            <td>{record.move.replaceAll('_', ' ').toLowerCase()}</td>
+                            <td>{record.alact_phase.replaceAll('_', ' ')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+              <div className="dashboard-panel-header">
+                <h3 className="dashboard-panel-title">Export</h3>
+                <span className="dashboard-panel-meta">{coachingTurns.length} rows</span>
+              </div>
+              <div className="dashboard-chip-row">
+                <button className="btn btn-secondary table-action-button" onClick={() => downloadCoachingExport('csv')}>Export CSV</button>
+                <button className="btn btn-secondary table-action-button" onClick={() => downloadCoachingExport('json')}>Export JSON</button>
+              </div>
+            </>
           )}
         </div>
       )}
