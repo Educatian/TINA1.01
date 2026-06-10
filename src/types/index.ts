@@ -168,6 +168,24 @@ export interface SessionAnalyticsData {
   layer_distribution: { layer1: number; layer2: number; layer3: number };
 }
 
+// Coaching-move telemetry (the move log IS the analytics data — see coachingEngine.ts)
+export interface CoachingTurnLog {
+  session_id: string;
+  user_id: string;
+  activity_id?: string | null;
+  turn_index: number;
+  move: string;            // CoachingMove name (see coachingEngine MOVES)
+  reflection_level: string; // technical | descriptive | critical
+  content_tags: string[];  // identity | ai-use | ai-society | affect
+  alact_phase: string;     // action | looking_back | awareness | alternatives | trial | closing
+  select_reason?: string;  // why the selector chose this move
+  verified?: boolean;      // verifyRender passed (false => regenerated/passed-through)
+  regenerated?: boolean;   // a regeneration pass occurred
+  latency_ms?: number;     // LLM response latency for this turn
+  text_len?: number;       // learner utterance length
+  created_at?: string;
+}
+
 export type ReflectiveDepthLevel = 'surface' | 'emerging' | 'developed';
 export type UncertaintyLevel = 'low' | 'medium' | 'high';
 export type UncertaintyType = 'knowledge' | 'pedagogical' | 'ethical' | 'practicum';
