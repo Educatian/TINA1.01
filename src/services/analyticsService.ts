@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { analyzeSentiment, runAdvancedAnalysis } from './nlpService';
-import type { TurnAnalytics, SessionAnalyticsData } from '../types';
+import type { CoachingTurnLog, TurnAnalytics, SessionAnalyticsData } from '../types';
 
 // Keywords for affect detection
 const VALUE_KEYWORDS = ['equity', 'care', 'autonomy', 'connection', 'achievement', 'rigor', 'inquiry', 'student-centered', 'fairness'];
@@ -265,6 +265,69 @@ export async function saveSessionAnalytics(
         console.log('Session analytics saved:', analytics);
     } catch (e) {
         console.error('Failed to save session analytics:', e);
+    }
+}
+
+// ============================================================================
+// COACHING-MOVE TELEMETRY (the move log IS the analytics data)
+// One move vocabulary, produced by coachingEngine, logged here. This EXTENDS
+// the existing analytics pipeline — it is not a parallel system. Best-effort +
+// feature-detected: if the `coaching_turns` table is not present yet (SQL not
+// applied), it no-ops with a one-time console note so the live class is never
+// affected. Apply tina-coaching-telemetry.sql in Supabase to enable it.
+// ============================================================================
+
+let coachingTelemetryDisabled = false; // set true after a "table missing" signal
+
+// Postgres / PostgREST codes meaning "this relation/column does not exist yet".
+function isMissingSchemaError(error: { code?: string; message?: string } | null): boolean {
+    if (!error) return false;
+    const code = error.code || '';
+    const message = (error.message || '').toLowerCase();
+    return (
+        code === '42P01' || // undefined_table
+        code === '42703' || // undefined_column
+        code === 'PGRST205' || // PostgREST: relation not found in schema cache
+        message.includes('does not exist') ||
+        message.includes('could not find the table') ||
+        message.includes('schema cache')
+    );
+}
+
+/**
+ * Log one coaching turn. Best-effort, never throws into the chat flow.
+ * Degrades to a no-op if the table/columns are not present (feature-detected).
+ */
+export async function saveCoachingTurn(log: CoachingTurnLog): Promise<void> {
+    if (coachingTelemetryDisabled) return;
+
+    try {
+        const { error } = await supabase.from('coaching_turns').upsert({
+            session_id: log.session_id,
+            user_id: log.user_id,
+            activity_id: log.activity_id ?? null,
+            turn_index: log.turn_index,
+            move: log.move,
+            reflection_level: log.reflection_level,
+            content_tags: log.content_tags,
+            alact_phase: log.alact_phase,
+            select_reason: log.select_reason ?? null,
+            verified: log.verified ?? null,
+            regenerated: log.regenerated ?? null,
+            latency_ms: log.latency_ms ?? null,
+            text_len: log.text_len ?? null,
+        }, { onConflict: 'session_id,turn_index' });
+
+        if (error) {
+            if (isMissingSchemaError(error)) {
+                coachingTelemetryDisabled = true;
+                console.info('[coaching telemetry] coaching_turns table not found — telemetry disabled (apply tina-coaching-telemetry.sql to enable). Chat is unaffected.');
+            } else {
+                console.warn('Failed to save coaching turn (non-blocking):', error);
+            }
+        }
+    } catch (e) {
+        console.warn('Coaching turn telemetry threw (non-blocking):', e);
     }
 }
 

@@ -12,8 +12,15 @@ import {
     analyzeUserTurn,
     saveTurnAnalytics,
     saveSessionAnalytics,
+    saveCoachingTurn,
     markVoiceInputUsed
 } from '../services/analyticsService';
+import {
+    runCoachingTurn,
+    verifyRender,
+    regenerationHint,
+    type AlactPhase,
+} from '../services/coachingEngine';
 import {
     extractAndSaveTurnResearchSignal,
     synthesizeAndSaveSessionResearchSummary,
@@ -154,6 +161,11 @@ Start with Orientation now.
 
 const MAX_TURNS = 12;
 const CHAT_RESPONSE_TIMEOUT_MS = 30000;
+// Coaching-move engine flag. Defaults ON; set VITE_COACHING_ENGINE='off' to disable.
+// If anything in the engine throws, we catch and fall back to exactly today's behavior.
+const COACHING_ENGINE_ENABLED =
+    String((import.meta as any).env?.VITE_COACHING_ENGINE ?? 'on').toLowerCase() !== 'off';
+const SESSION_BUDGET_MS = 10 * 60 * 1000; // ~10-minute reflective session
 const SELF_TEST_LEARNER_EMAILS = new Set(['jewoong.moon@gmail.com']);
 const DEFAULT_LEARNER_NOTICE = 'No instructor activity has been assigned yet, so you are starting with TINA\'s default reflection chat.';
 const CHAT_TIMEOUT_ERROR = 'CHAT_TIMEOUT_ERROR';
@@ -172,6 +184,17 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
                 reject(error);
             });
     });
+}
+
+// Approximate the ALACT phase for a resumed session from its turn count, so the
+// coaching engine re-enters the cycle at a sensible place rather than 'action'.
+function phaseForTurnIndex(turnIndex: number): AlactPhase {
+    if (turnIndex <= 1) return 'action';
+    if (turnIndex <= 3) return 'looking_back';
+    if (turnIndex <= 6) return 'awareness';
+    if (turnIndex <= 8) return 'alternatives';
+    if (turnIndex <= 10) return 'trial';
+    return 'closing';
 }
 
 interface ChatInterfaceProps {
@@ -215,6 +238,9 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const quickReplyResponsesRef = useRef<Record<string, string>>({});
     const queuedMessagesRef = useRef<string[]>([]);
     const presenceChannelRef = useRef<RealtimeChannel | null>(null);
+    // Coaching engine: track the ALACT phase across turns + session start wall-clock.
+    const alactPhaseRef = useRef<AlactPhase>('action');
+    const sessionStartMsRef = useRef<number>(Date.now());
 
     // Check for resume session from navigation state
     const resumeSession = (location.state as any)?.resumeSession as Session | undefined;
@@ -411,6 +437,9 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
                     // Re-initialize analytics tracking for resumed session
                     initSessionTracking();
+                    sessionStartMsRef.current = Date.now();
+                    // Approximate the ALACT phase from how far the resumed session is.
+                    alactPhaseRef.current = phaseForTurnIndex(resumeSession.turn_count || 0);
                     startTurnTracking();
 
                     // Clear the navigation state
@@ -424,6 +453,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     setSessionIdState(newSessionId);
                     // Initialize analytics tracking
                     initSessionTracking();
+                    sessionStartMsRef.current = Date.now();
+                    alactPhaseRef.current = 'action';
                     if (!actsAsInstructor && currentActivityRecord?.id && !isLearnerPreview && !canUseSelfTestActivities) {
                         try {
                             await updateEnrollmentStatus(currentActivityRecord.id, user.id, 'started');
@@ -570,12 +601,67 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         const newTurnCount = turnCountRef.current + 1;
         const userResponseTimeMs = getTurnResponseTime();
 
+        // --- Coaching-move engine (feature-detected, fully isolated) ---------
+        // classify -> select a single move -> inject its directive into THIS turn.
+        // The LLM stays the renderer; the persona/system prompt is untouched.
+        // Any throw here is caught and we fall back to exactly today's behavior.
+        let coachingPlan: ReturnType<typeof runCoachingTurn> | null = null;
+        if (COACHING_ENGINE_ENABLED) {
+            try {
+                coachingPlan = runCoachingTurn({
+                    text: userMsg.text,
+                    history: priorMessages,
+                    phase: alactPhaseRef.current,
+                    turnIndex: newTurnCount,
+                    maxTurns: MAX_TURNS,
+                    elapsedMs: Date.now() - sessionStartMsRef.current,
+                    budgetMs: SESSION_BUDGET_MS,
+                });
+            } catch (engineErr) {
+                console.warn('Coaching engine failed (falling back to default behavior):', engineErr);
+                coachingPlan = null;
+            }
+        }
+
+        const messageToSend = coachingPlan
+            ? `${userMsg.text}\n\n[COACHING DIRECTIVE — follow this for your reply, keep your TINA persona and the one-question rule: ${coachingPlan.directive}]`
+            : userMsg.text;
+
         try {
-            const response = await withTimeout(
-                chatSession.sendMessage({ message: userMsg.text }),
+            const turnStartMs = Date.now();
+            let response = await withTimeout(
+                chatSession.sendMessage({ message: messageToSend }),
                 CHAT_RESPONSE_TIMEOUT_MS,
                 CHAT_TIMEOUT_ERROR,
             );
+            let verified = true;
+            let regenerated = false;
+
+            // verifyRender guard: "mirror, not advisor". On a violation, ONE
+            // nudged regeneration; otherwise pass through. Never blocks the class.
+            if (coachingPlan) {
+                try {
+                    const check = verifyRender(coachingPlan.move, response.text || '');
+                    if (!check.ok) {
+                        verified = false;
+                        const nudge = `${userMsg.text}\n\n[${regenerationHint(coachingPlan.move, check.violations)}]`;
+                        const retry = await withTimeout(
+                            chatSession.sendMessage({ message: nudge }),
+                            CHAT_RESPONSE_TIMEOUT_MS,
+                            CHAT_TIMEOUT_ERROR,
+                        );
+                        regenerated = true;
+                        // Only adopt the retry if it produced text; otherwise keep the first.
+                        if (retry.text) {
+                            response = retry;
+                            verified = verifyRender(coachingPlan.move, response.text || '').ok;
+                        }
+                    }
+                } catch (verifyErr) {
+                    console.warn('verifyRender/regeneration failed (passing original through):', verifyErr);
+                }
+            }
+
             const botMsg: Message = {
                 role: 'model',
                 text: response.text || '',
@@ -583,6 +669,28 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             };
 
             setTurnCountState(newTurnCount);
+
+            // Advance the ALACT phase + log the move (best-effort, non-blocking).
+            if (coachingPlan) {
+                alactPhaseRef.current = coachingPlan.nextPhase;
+                if (sessionIdRef.current) {
+                    void saveCoachingTurn({
+                        session_id: sessionIdRef.current,
+                        user_id: user.id,
+                        activity_id: resolvedActivityId,
+                        turn_index: newTurnCount,
+                        move: coachingPlan.move,
+                        reflection_level: coachingPlan.classified.reflectionLevel,
+                        content_tags: coachingPlan.classified.contentTags,
+                        alact_phase: coachingPlan.nextPhase,
+                        select_reason: coachingPlan.reason,
+                        verified,
+                        regenerated,
+                        latency_ms: Date.now() - turnStartMs,
+                        text_len: userMsg.text.length,
+                    });
+                }
+            }
 
             if (sessionIdRef.current) {
                 try {
@@ -778,6 +886,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         setQuickReplyResponsesState(() => ({}));
         queuedMessagesRef.current = [];
         setQueuedCount(0);
+        alactPhaseRef.current = 'action';
+        sessionStartMsRef.current = Date.now();
         hasInitialized.current = false;
         window.location.reload();
     };
