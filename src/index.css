@@ -3237,10 +3237,34 @@ body {
     text-align: center;
 }
 
-.onboarding-skip {
+.onboarding-topbar {
     position: absolute;
-    top: 16px;
-    right: 18px;
+    top: 14px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.onboarding-voice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: #FCF3CF;
+    color: #B7950B;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.onboarding-voice:hover { background: #F4E29A; }
+.onboarding-voice[aria-pressed="false"] { color: #B0A98F; background: #F1EFE6; }
+
+.onboarding-skip {
     background: none;
     border: none;
     color: #B7950B;

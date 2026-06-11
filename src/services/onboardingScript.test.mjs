@@ -1,7 +1,7 @@
 /* Onboarding narration script — pure structure + activity-awareness checks. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildOnboardingScript, onboardingSeenKey } from './onboardingScript.ts';
+import { buildOnboardingScript, onboardingSeenKey, NARRATION_CLIP_TEXT } from './onboardingScript.ts';
 
 test('null config -> valid generic script (reflection scenario)', () => {
   const steps = buildOnboardingScript(null);
@@ -42,4 +42,36 @@ test('learner level changes the framing wording', () => {
 test('onboardingSeenKey is stable + per-user', () => {
   assert.equal(onboardingSeenKey('u1'), 'tina-onboarded-u1');
   assert.equal(onboardingSeenKey(null), 'tina-onboarded-anon');
+});
+
+test('voice clip is attached only when shown text matches the recorded clip exactly', () => {
+  // Default activity (reflection, your teaching, no topic) -> every step has a
+  // clip, and each step.body equals the recorded canonical text.
+  const def = buildOnboardingScript({ activityGoal: 'reflection' });
+  for (const s of def) {
+    assert.ok(s.clipId, `${s.id} has a clip on the default path`);
+    assert.equal(s.body, NARRATION_CLIP_TEXT[s.clipId], `${s.id} voice == on-screen text`);
+  }
+});
+
+test('custom topic falls back to text-only on the scenario step (no mismatch)', () => {
+  const steps = buildOnboardingScript({ activityGoal: 'reflection', topic: 'AI in formative assessment' });
+  const scenario = steps.find((s) => s.id === 'scenario');
+  assert.equal(scenario.clipId, undefined, 'topic-customized scenario has no clip');
+  // other fixed steps still keep their clips
+  assert.equal(steps.find((s) => s.id === 'welcome').clipId, 'welcome');
+});
+
+test('non-default learner level drops only the how-it-works clip', () => {
+  const grad = buildOnboardingScript({ activityGoal: 'reflection', learnerLevel: 'graduate' });
+  assert.equal(grad.find((s) => s.id === 'how-it-works').clipId, undefined);
+  assert.equal(grad.find((s) => s.id === 'handoff').clipId, 'handoff');
+});
+
+test('each scenario goal maps to its own clip on the default (no-topic) path', () => {
+  for (const goal of ['reflection', 'case-analysis', 'lesson-design', 'ethics-decision', 'feedback-revision']) {
+    const s = buildOnboardingScript({ activityGoal: goal }).find((x) => x.id === 'scenario');
+    assert.equal(s.clipId, `scenario-${goal}`);
+    assert.equal(s.body, NARRATION_CLIP_TEXT[`scenario-${goal}`]);
+  }
 });
