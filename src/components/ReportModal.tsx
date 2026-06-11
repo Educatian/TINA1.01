@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { jsPDF } from 'jspdf';
 import {
     extractCarryQuestions,
     getCoachingTurnsForSession,
@@ -93,7 +92,10 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
         return sections.length > 0 ? sections : null;
     };
 
-    const downloadPDF = () => {
+    const downloadPDF = async () => {
+        // jsPDF (~350KB) is the single heaviest dependency and is only needed
+        // when a learner actually downloads — load it on click, not on boot.
+        const { jsPDF } = await import('jspdf');
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();

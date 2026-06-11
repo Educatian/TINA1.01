@@ -1,13 +1,25 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { Login } from './components/Login';
 import { ChatInterface } from './components/ChatInterface';
-import { Certificate } from './components/Certificate';
-import { AdminDashboard } from './components/AdminDashboard';
-import { MyAccount } from './components/MyAccount';
 import { Navbar } from './components/Navbar';
 import './index.css';
+
+// Route-level code splitting: the admin dashboard (~80KB) and the rarely-hit
+// certificate/account pages load on demand instead of bloating the first
+// paint of the learner chat — the only path most users ever take.
+const AdminDashboard = lazy(() => import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
+const Certificate = lazy(() => import('./components/Certificate').then((m) => ({ default: m.Certificate })));
+const MyAccount = lazy(() => import('./components/MyAccount').then((m) => ({ default: m.MyAccount })));
+
+function RouteFallback() {
+    return (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+            <p>Loading...</p>
+        </div>
+    );
+}
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
     const { user, loading, isAdmin } = useAuth();
@@ -50,7 +62,9 @@ function AdminPage() {
     return (
         <div className="app-container" style={{ maxWidth: '1200px' }}>
             <Navbar />
-            <AdminDashboard />
+            <Suspense fallback={<RouteFallback />}>
+                <AdminDashboard />
+            </Suspense>
         </div>
     );
 }
@@ -59,7 +73,9 @@ function AccountPage() {
     return (
         <div className="app-container" style={{ maxWidth: '900px' }}>
             <Navbar />
-            <MyAccount />
+            <Suspense fallback={<RouteFallback />}>
+                <MyAccount />
+            </Suspense>
         </div>
     );
 }
@@ -102,7 +118,9 @@ function App() {
                     path="/certificate/:sessionId"
                     element={
                         <ProtectedRoute>
-                            <Certificate />
+                            <Suspense fallback={<RouteFallback />}>
+                                <Certificate />
+                            </Suspense>
                         </ProtectedRoute>
                     }
                 />

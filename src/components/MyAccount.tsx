@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
-import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
-import { saveAs } from 'file-saver';
+// Heavy export libs (jspdf, html2canvas, docx, file-saver ≈ 0.9MB combined) are
+// dynamically imported inside each download handler so visiting /account does
+// not pay for an export the user may never trigger.
 import { useAuth } from '../hooks/useAuth';
 import { getUserSessions } from '../hooks/useSession';
 import type { Message, Session } from '../types';
@@ -42,7 +41,7 @@ export function MyAccount() {
         return session.messages as Message[];
     };
 
-    const downloadTXT = (session: Session) => {
+    const downloadTXT = async (session: Session) => {
         const messages = getMessages(session);
         let content = 'TINA Chat Log\n';
         content += `Date: ${new Date(session.created_at).toLocaleDateString()}\n`;
@@ -61,12 +60,17 @@ export function MyAccount() {
         }
 
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const { saveAs } = await import('file-saver');
         saveAs(blob, `tina-chat-${new Date(session.created_at).toISOString().slice(0, 10)}.txt`);
     };
 
     const downloadWord = async (session: Session) => {
+        const [{ Document, HeadingLevel, Packer, Paragraph, TextRun }, { saveAs }] = await Promise.all([
+            import('docx'),
+            import('file-saver'),
+        ]);
         const messages = getMessages(session);
-        const children: Paragraph[] = [];
+        const children: InstanceType<typeof Paragraph>[] = [];
 
         children.push(new Paragraph({
             text: 'TINA Chat Log',
@@ -107,7 +111,8 @@ export function MyAccount() {
         saveAs(blob, `tina-chat-${new Date(session.created_at).toISOString().slice(0, 10)}.docx`);
     };
 
-    const downloadPDF = (session: Session) => {
+    const downloadPDF = async (session: Session) => {
+        const { jsPDF } = await import('jspdf');
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.getWidth();
         const maxWidth = pageWidth - 50;
@@ -162,6 +167,10 @@ export function MyAccount() {
     const downloadScreenshot = async () => {
         if (!chatViewRef.current) return;
 
+        const [{ default: html2canvas }, { saveAs }] = await Promise.all([
+            import('html2canvas'),
+            import('file-saver'),
+        ]);
         const canvas = await html2canvas(chatViewRef.current, {
             backgroundColor: '#FFFEF7',
             scale: 2,

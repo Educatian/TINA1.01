@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { createProxyChat, type ProxyChat } from '../services/aiProxy';
@@ -13,8 +13,10 @@ import {
     saveTurnAnalytics,
     saveSessionAnalytics,
     saveCoachingTurn,
+    saveExperimentAssignment,
     markVoiceInputUsed
 } from '../services/analyticsService';
+import { assignCondition, type ExperimentAssignment } from '../services/experimentAssignment';
 import {
     runCoachingTurn,
     verifyRender,
@@ -42,7 +44,9 @@ import {
 } from '../services/activityConfig';
 import { isLearnerPreviewEnabled } from '../services/rolePreview';
 import { supabase } from '../lib/supabase';
-import { ReportModal } from './ReportModal';
+// ReportModal pulls in jsPDF lazily; keep the modal itself out of the chat
+// chunk so the report machinery only loads when a session actually completes.
+const ReportModal = lazy(() => import('./ReportModal').then((m) => ({ default: m.ReportModal })));
 import { QuickReply, QuickReplyQuestion, detectQuickReply } from './QuickReply';
 import { ProgressBar } from './ProgressBar';
 import { TinaAvatar, avatarStateForMove, type TinaAvatarState } from './TinaAvatar';
@@ -172,10 +176,12 @@ Start with Orientation now.
 
 const MAX_TURNS = 12;
 const CHAT_RESPONSE_TIMEOUT_MS = 30000;
-// Coaching-move engine flag. Defaults ON; set VITE_COACHING_ENGINE='off' to disable.
-// If anything in the engine throws, we catch and fall back to exactly today's behavior.
-const COACHING_ENGINE_ENABLED =
-    String((import.meta as any).env?.VITE_COACHING_ENGINE ?? 'on').toLowerCase() !== 'off';
+// Whether the coaching-move engine runs is now an EXPERIMENT ASSIGNMENT, not a
+// single global flag (see services/experimentAssignment.ts). VITE_COACHING_ENGINE
+// = 'on' (default, everyone treatment — unchanged live behavior) | 'off'
+// (everyone control) | 'rct' (deterministic 50/50 by user id). Resolved per
+// learner below. If anything in the engine throws, we still fall back to exactly
+// today's behavior for that turn.
 const SESSION_BUDGET_MS = 10 * 60 * 1000; // ~10-minute reflective session
 const SELF_TEST_LEARNER_EMAILS = new Set(['jewoong.moon@gmail.com']);
 const DEFAULT_LEARNER_NOTICE = 'No instructor activity has been assigned yet, so you are starting with TINA\'s default reflection chat.';
@@ -262,6 +268,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     // Content tags that have surfaced this session (drives Layer-3 coverage
     // steering in the engine's REFRAME_PERSPECTIVE directive).
     const coveredTagsRef = useRef<Set<ContentTag>>(new Set());
+    // Coaching-engine A/B assignment for this learner (stable across sessions).
+    const experimentRef = useRef<ExperimentAssignment>(assignCondition(user?.id));
 
     // Check for resume session from navigation state
     const resumeSession = (location.state as any)?.resumeSession as Session | undefined;
@@ -443,6 +451,15 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
                     // Re-initialize analytics tracking for resumed session
                     initSessionTracking();
+                    experimentRef.current = assignCondition(user.id);
+                    void saveExperimentAssignment({
+                        sessionId: resumeSession.id,
+                        userId: user.id,
+                        activityId: currentActivityRecord?.id || resumeSession.activity_id || null,
+                        condition: experimentRef.current.condition,
+                        mode: experimentRef.current.mode,
+                        assignmentVersion: experimentRef.current.assignmentVersion,
+                    });
                     sessionStartMsRef.current = Date.now();
                     // Approximate the ALACT phase from how far the resumed session is.
                     alactPhaseRef.current = phaseForTurnIndex(resumeSession.turn_count || 0);
@@ -459,6 +476,15 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     setSessionIdState(newSessionId);
                     // Initialize analytics tracking
                     initSessionTracking();
+                    experimentRef.current = assignCondition(user.id);
+                    void saveExperimentAssignment({
+                        sessionId: newSessionId,
+                        userId: user.id,
+                        activityId: currentActivityRecord?.id || null,
+                        condition: experimentRef.current.condition,
+                        mode: experimentRef.current.mode,
+                        assignmentVersion: experimentRef.current.assignmentVersion,
+                    });
                     sessionStartMsRef.current = Date.now();
                     alactPhaseRef.current = 'action';
                     if (!actsAsInstructor && currentActivityRecord?.id && !isLearnerPreview && !canUseSelfTestActivities) {
@@ -618,7 +644,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         // The LLM stays the renderer; the persona/system prompt is untouched.
         // Any throw here is caught and we fall back to exactly today's behavior.
         let coachingPlan: ReturnType<typeof runCoachingTurn> | null = null;
-        if (COACHING_ENGINE_ENABLED) {
+        if (experimentRef.current.engineEnabled) {
             try {
                 coachingPlan = runCoachingTurn({
                     text: userMsg.text,
@@ -1124,11 +1150,13 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             </div>
 
             {showReportModal && completedSession && (
-                <ReportModal
-                    session={completedSession}
-                    onClose={() => setShowReportModal(false)}
-                    onNewSession={handleNewSession}
-                />
+                <Suspense fallback={null}>
+                    <ReportModal
+                        session={completedSession}
+                        onClose={() => setShowReportModal(false)}
+                        onNewSession={handleNewSession}
+                    />
+                </Suspense>
             )}
         </>
     );

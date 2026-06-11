@@ -331,6 +331,47 @@ export async function saveCoachingTurn(log: CoachingTurnLog): Promise<void> {
     }
 }
 
+// ============================================================================
+// EXPERIMENT ASSIGNMENT LOG (coaching-engine A/B condition, per session)
+// Best-effort + feature-detected, mirroring saveCoachingTurn. Records which arm
+// the learner was in so the CONTROL arm (which writes no coaching_turns) is
+// still observable. Apply tina-experiment.sql in Supabase to enable.
+// ============================================================================
+
+let experimentLogDisabled = false;
+
+export async function saveExperimentAssignment(payload: {
+    sessionId: string;
+    userId: string;
+    activityId?: string | null;
+    condition: string;
+    mode: string;
+    assignmentVersion: string;
+}): Promise<void> {
+    if (experimentLogDisabled) return;
+    try {
+        const { error } = await supabase.from('experiment_assignments').upsert({
+            session_id: payload.sessionId,
+            user_id: payload.userId,
+            activity_id: payload.activityId ?? null,
+            condition: payload.condition,
+            mode: payload.mode,
+            assignment_version: payload.assignmentVersion,
+        }, { onConflict: 'session_id' });
+
+        if (error) {
+            if (isMissingSchemaError(error)) {
+                experimentLogDisabled = true;
+                console.info('[experiment] experiment_assignments table not found — assignment logging disabled (apply tina-experiment.sql to enable). Chat is unaffected.');
+            } else {
+                console.warn('Failed to save experiment assignment (non-blocking):', error);
+            }
+        }
+    } catch (e) {
+        console.warn('Experiment assignment telemetry threw (non-blocking):', e);
+    }
+}
+
 // Mark PDF downloaded
 export async function markPDFDownloaded(sessionId: string): Promise<void> {
     try {

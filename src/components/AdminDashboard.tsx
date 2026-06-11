@@ -673,6 +673,31 @@ export function AdminDashboard() {
   }, [coachingTurns, reflectionSignals]);
   const LLM_DEPTH_ORDER = ['surface', 'emerging', 'developed'];
 
+  const downloadClassifierAgreement = (format: 'csv' | 'json') => {
+    if (!classifierAgreement) return;
+    let blob: Blob;
+    let filename: string;
+    if (format === 'json') {
+      blob = new Blob([JSON.stringify(classifierAgreement, null, 2)], { type: 'application/json' });
+      filename = 'tina-classifier-agreement.json';
+    } else {
+      const header = ['lexical_level', ...LLM_DEPTH_ORDER, 'on_diagonal'];
+      const rows = LEVEL_ORDER.map((lex) => {
+        const cells = LLM_DEPTH_ORDER.map((llm) => classifierAgreement.matrix[lex]?.[llm] || 0);
+        return [lex, ...cells, classifierAgreement.matrix[lex]?.[LEXICAL_TO_LLM_DEPTH[lex]] || 0].join(',');
+      });
+      const summary = `# matched_turns=${classifierAgreement.matched},agreement_pct=${classifierAgreement.agreementPct}`;
+      blob = new Blob([[summary, header.join(','), ...rows].join('\n')], { type: 'text/csv' });
+      filename = 'tina-classifier-agreement.csv';
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const downloadCoachingExport = (format: 'csv' | 'json') => {
     if (coachingTurns.length === 0) return;
     let blob: Blob;
@@ -1259,6 +1284,10 @@ export function AdminDashboard() {
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                    <div className="dashboard-chip-row">
+                      <button className="btn btn-secondary table-action-button" onClick={() => downloadClassifierAgreement('csv')}>Export CSV</button>
+                      <button className="btn btn-secondary table-action-button" onClick={() => downloadClassifierAgreement('json')}>Export JSON</button>
                     </div>
                   </section>
                 </div>

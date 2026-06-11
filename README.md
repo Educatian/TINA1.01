@@ -73,9 +73,13 @@ TINA includes a **pure, unit-tested coaching engine** (`src/services/coachingEng
 
 **Per-turn telemetry** is logged via `analyticsService.saveCoachingTurn(...)` into the `coaching_turns` table (the move log *is* the analytics data; no parallel pipeline). It is **best-effort and feature-detected**: with the SQL not applied or the engine disabled/erroring, the chat behaves exactly as before.
 
-- **Flag:** `VITE_COACHING_ENGINE` (defaults **on**; set `off` to disable).
-- **Schema:** apply `tina-coaching-telemetry.sql` in the Supabase SQL Editor (idempotent, additive-only, RLS = per-user + instructor-read). The Admin Dashboard **Coaching Moves** tab shows reflection-level distribution, move-usage frequency, ALACT phase coverage, per-learner reflection trajectory, and CSV/JSON export — with a clean "not enabled" state until the SQL is applied.
-- **Tests:** `npm test` (Node ≥ 22 `node --test`, 27 cases covering classify/select/verify, every move reachable, shallow → `DEEPEN_REFLECTION`, end-of-time → `CLOSE_SYNTHESIS`).
+- **Flag / experiment mode:** `VITE_COACHING_ENGINE` is now an A/B assignment, not just on/off:
+  - `on` (default) — everyone in **treatment** (engine runs); preserves prior live behavior.
+  - `off` — everyone in **control** (no move directives; persona/analytics/extraction unchanged).
+  - `rct` — deterministic **50/50 split** bucketed by a stable hash of `user_id` (same learner, same arm across sessions). See `src/services/experimentAssignment.ts`.
+- **Schema:** apply `tina-coaching-telemetry.sql` (move log) and `tina-experiment.sql` (per-session arm assignment) in the Supabase SQL Editor (idempotent, additive-only, RLS = per-user + instructor-read). The Admin Dashboard **Coaching Moves** tab shows reflection-level distribution, move-usage frequency, ALACT phase coverage, per-learner trajectory, a **lexical-vs-Gemini classifier-agreement matrix** (measurement validity), and CSV/JSON export — with a clean "not enabled" state until the SQL is applied.
+- **Research data dictionary:** every research table/field + suggested analyses are documented in [docs/research-data-dictionary.md](./docs/research-data-dictionary.md) for OSF preregistration/sharing.
+- **Tests:** `npm test` (Node ≥ 22 `node --test`, 40 cases: classify/select/verify, every move reachable, shallow → `DEEPEN_REFLECTION` → `SCAFFOLD_WITH_STEM`, end-of-time → `CLOSE_SYNTHESIS`, grounding excerpts, and RCT assignment determinism/balance).
 
 ---
 

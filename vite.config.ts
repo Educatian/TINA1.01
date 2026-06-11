@@ -13,6 +13,19 @@ export default defineConfig(() => {
       host: '0.0.0.0',
     },
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          // Split stable third-party code into its own long-cached chunks so a
+          // routine app change does not force users to re-download React +
+          // Supabase + the router on every deploy.
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            'vendor-supabase': ['@supabase/supabase-js'],
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
