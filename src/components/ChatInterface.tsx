@@ -51,6 +51,8 @@ import { QuickReply, QuickReplyQuestion, detectQuickReply } from './QuickReply';
 import { ProgressBar } from './ProgressBar';
 import { TinaAvatar, avatarStateForMove, type TinaAvatarState } from './TinaAvatar';
 import { MarkdownLite } from './MarkdownLite';
+import { Onboarding } from './Onboarding';
+import { onboardingSeenKey } from '../services/onboardingScript';
 import { ActivityContextHeader } from './ActivityContextHeader';
 import type { ActivityConfig, ActivityRecord, Message, Session } from '../types';
 
@@ -248,6 +250,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     // stance for the in-flight turn (driven by the selected coaching move).
     const [streamingText, setStreamingText] = useState('');
     const [pendingAvatarState, setPendingAvatarState] = useState<TinaAvatarState>('thinking');
+    // First-run TINA-narrated onboarding (per-user, skippable, replayable).
+    const [showOnboarding, setShowOnboarding] = useState(false);
     const isProcessingRef = useRef(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -294,6 +298,27 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     useEffect(() => {
         sessionIdRef.current = sessionId;
     }, [sessionId]);
+
+    // Show the narrated onboarding once per learner (skippable, replayable).
+    // Instructors acting as instructors don't get the cold-start tour; they can
+    // replay it from the header to preview what learners see.
+    useEffect(() => {
+        if (!user || actsAsInstructor) return;
+        try {
+            if (!window.localStorage.getItem(onboardingSeenKey(user.id))) {
+                setShowOnboarding(true);
+            }
+        } catch {
+            /* private mode — just skip the tour */
+        }
+    }, [user, actsAsInstructor]);
+
+    const markOnboardingSeen = () => {
+        try {
+            if (user) window.localStorage.setItem(onboardingSeenKey(user.id), '1');
+        } catch { /* ignore */ }
+        setShowOnboarding(false);
+    };
 
     useEffect(() => {
         quickReplyResponsesRef.current = quickReplyResponses;
@@ -1046,7 +1071,17 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                             onToggle={() => setIsContextCollapsed(prev => !prev)}
                         />
                     )}
-                    <ProgressBar currentTurn={turnCount} totalTurns={MAX_TURNS} />
+                    <div className="chat-meta-row">
+                        <ProgressBar currentTurn={turnCount} totalTurns={MAX_TURNS} />
+                        <button
+                            type="button"
+                            className="onboarding-replay-btn"
+                            onClick={() => setShowOnboarding(true)}
+                            title="Replay TINA's introduction"
+                        >
+                            How this works
+                        </button>
+                    </div>
                 </div>
 
                 <div className="chat-messages">
@@ -1157,6 +1192,14 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         onNewSession={handleNewSession}
                     />
                 </Suspense>
+            )}
+
+            {showOnboarding && (
+                <Onboarding
+                    activityConfig={activityConfig}
+                    onComplete={markOnboardingSeen}
+                    onSkip={markOnboardingSeen}
+                />
             )}
         </>
     );
