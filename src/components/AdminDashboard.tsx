@@ -642,6 +642,37 @@ export function AdminDashboard() {
       .sort((a, b) => a.turn_index - b.turn_index);
   }, [coachingTurns, trajectoryLearnerId]);
 
+  // Classifier validity check: the engine's lexical level (technical/
+  // descriptive/critical) vs Gemini's reflective_depth (surface/emerging/
+  // developed) for the SAME turn. The disagreement rate is a running
+  // measurement-validity probe on the cheap classifier.
+  const LEXICAL_TO_LLM_DEPTH: Record<string, string> = {
+    technical: 'surface', descriptive: 'emerging', critical: 'developed',
+  };
+  const classifierAgreement = useMemo(() => {
+    if (coachingTurns.length === 0 || reflectionSignals.length === 0) return null;
+    const llmByKey = new Map<string, string>();
+    reflectionSignals.forEach((record) => {
+      if (record.session_id && typeof record.turn_number === 'number' && record.reflective_depth_level) {
+        llmByKey.set(`${record.session_id}:${record.turn_number}`, record.reflective_depth_level);
+      }
+    });
+    let matched = 0;
+    let agree = 0;
+    const matrix: Record<string, Record<string, number>> = {};
+    coachingTurns.forEach((turn) => {
+      const llmLevel = llmByKey.get(`${turn.session_id}:${turn.turn_index}`);
+      if (!llmLevel || !turn.reflection_level) return;
+      matched += 1;
+      matrix[turn.reflection_level] = matrix[turn.reflection_level] || {};
+      matrix[turn.reflection_level][llmLevel] = (matrix[turn.reflection_level][llmLevel] || 0) + 1;
+      if (LEXICAL_TO_LLM_DEPTH[turn.reflection_level] === llmLevel) agree += 1;
+    });
+    if (matched === 0) return null;
+    return { matched, agreementPct: Math.round((agree / matched) * 100), matrix };
+  }, [coachingTurns, reflectionSignals]);
+  const LLM_DEPTH_ORDER = ['surface', 'emerging', 'developed'];
+
   const downloadCoachingExport = (format: 'csv' | 'json') => {
     if (coachingTurns.length === 0) return;
     let blob: Blob;
@@ -1194,6 +1225,44 @@ export function AdminDashboard() {
                   </div>
                 </section>
               </div>
+              {classifierAgreement && (
+                <div className="dashboard-panel-grid">
+                  <section className="dashboard-panel">
+                    <div className="dashboard-panel-header">
+                      <h3 className="dashboard-panel-title">Classifier Agreement (lexical vs Gemini)</h3>
+                      <span className="dashboard-panel-meta">{classifierAgreement.matched} matched turns · {classifierAgreement.agreementPct}% agree</span>
+                    </div>
+                    <p className="activity-support-copy">
+                      Rows = the engine's lexical level for a turn; columns = Gemini's reflective depth
+                      for the same turn (technical↔surface, descriptive↔emerging, critical↔developed).
+                      Off-diagonal mass is the running validity gap of the cheap classifier.
+                    </p>
+                    <div className="sessions-table dashboard-table-shell">
+                      <table>
+                        <thead>
+                          <tr><th>lexical \ LLM</th>{LLM_DEPTH_ORDER.map((d) => <th key={d}>{d}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {LEVEL_ORDER.map((lex) => (
+                            <tr key={lex}>
+                              <td><strong>{lex}</strong></td>
+                              {LLM_DEPTH_ORDER.map((llm) => {
+                                const count = classifierAgreement.matrix[lex]?.[llm] || 0;
+                                const isDiagonal = LEXICAL_TO_LLM_DEPTH[lex] === llm;
+                                return (
+                                  <td key={llm} className={count > 0 && !isDiagonal ? 'metric-danger-cell' : undefined}>
+                                    {count}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                </div>
+              )}
               <div className="dashboard-panel-header">
                 <h3 className="dashboard-panel-title">Export</h3>
                 <span className="dashboard-panel-meta">{coachingTurns.length} rows</span>

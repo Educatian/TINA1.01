@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      # Guard: AI keys must never appear in the client bundle (they live only
+      # in the Netlify function env — see netlify/functions/ai-proxy.mts).
+      - name: Assert no API keys in bundle
+        run: |
+          if grep -rE "AIza[0-9A-Za-z_-]{30,}|hf_[0-9A-Za-z]{30,}" dist/; then
+            echo "::error::API key material found in the built bundle"
+            exit 1
+          fi

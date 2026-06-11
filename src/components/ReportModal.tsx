@@ -1,6 +1,25 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { jsPDF } from 'jspdf';
+import {
+    extractCarryQuestions,
+    getCoachingTurnsForSession,
+    saveCarryForward,
+    type TrajectoryPoint,
+} from '../services/reflectionLoop';
+import { TinaAvatar } from './TinaAvatar';
 import type { Session, TeacherCluster } from '../types';
+
+const LEVEL_HEIGHT: Record<TrajectoryPoint['reflectionLevel'], number> = {
+    technical: 1,
+    descriptive: 2,
+    critical: 3,
+};
+
+const LEVEL_LABEL: Record<TrajectoryPoint['reflectionLevel'], string> = {
+    technical: 'Brief',
+    descriptive: 'Describing',
+    critical: 'Examining why',
+};
 
 const CLUSTER_INFO: Record<TeacherCluster, {
     title: string;
@@ -39,6 +58,24 @@ interface ReportModalProps {
 }
 
 export function ReportModal({ session, onClose, onNewSession }: ReportModalProps) {
+    const [trajectory, setTrajectory] = useState<TrajectoryPoint[]>([]);
+    const [carriedQuestion, setCarriedQuestion] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        getCoachingTurnsForSession(session.id).then((points) => {
+            if (!cancelled) setTrajectory(points);
+        });
+        return () => { cancelled = true; };
+    }, [session.id]);
+
+    const carryQuestions = extractCarryQuestions(session.summary_report);
+
+    const handleCarrySelect = (question: string) => {
+        setCarriedQuestion(question);
+        void saveCarryForward(session.user_id, session.id, question);
+    };
+
     const parseReport = (report: string | null) => {
         if (!report) return null;
 
@@ -226,6 +263,9 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                 </button>
 
                 <div className="report-card">
+                    <div className="report-tina-wrap">
+                        <TinaAvatar state="celebrating" height={120} />
+                    </div>
                     <div className="report-emblem" style={{
                         background: 'linear-gradient(135deg, #F4D03F 0%, #F39C12 100%)',
                         color: '#2C3E50',
@@ -259,6 +299,60 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                             </div>
                         )}
                     </div>
+
+                    {trajectory.length >= 3 && (
+                        <div className="report-trajectory">
+                            <h3>Your Reflection Depth, Turn by Turn</h3>
+                            <p className="report-trajectory-note">
+                                Each bar is one of your messages: taller bars are moments where you
+                                examined the "why" behind your teaching, not just the "what".
+                            </p>
+                            <div className="trajectory-bars" role="img" aria-label="Reflection depth per turn">
+                                {trajectory.map((point) => (
+                                    <div
+                                        key={point.turnIndex}
+                                        className={`trajectory-bar trajectory-${point.reflectionLevel}`}
+                                        style={{ height: `${LEVEL_HEIGHT[point.reflectionLevel] * 22}px` }}
+                                        title={`Turn ${point.turnIndex}: ${LEVEL_LABEL[point.reflectionLevel]}`}
+                                    />
+                                ))}
+                            </div>
+                            <div className="trajectory-legend">
+                                <span><i className="trajectory-dot trajectory-technical" /> Brief</span>
+                                <span><i className="trajectory-dot trajectory-descriptive" /> Describing</span>
+                                <span><i className="trajectory-dot trajectory-critical" /> Examining why</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {carryQuestions.length > 0 && (
+                        <div className="report-carry">
+                            <h3>Carry One Question Forward</h3>
+                            {carriedQuestion ? (
+                                <p className="carry-saved">
+                                    Saved. TINA will bring this back next time: <em>"{carriedQuestion}"</em>
+                                </p>
+                            ) : (
+                                <>
+                                    <p className="report-trajectory-note">
+                                        Pick the question you most want to keep thinking about. TINA will
+                                        return to it at the start of your next session.
+                                    </p>
+                                    <div className="carry-options">
+                                        {carryQuestions.map((question, idx) => (
+                                            <button
+                                                key={idx}
+                                                className="carry-option"
+                                                onClick={() => handleCarrySelect(question)}
+                                            >
+                                                {question}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
 
                     {clusterInfo && (
                         <div className="report-lens-card">

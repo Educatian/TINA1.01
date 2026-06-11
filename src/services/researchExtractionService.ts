@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { proxyGenerateContent } from './aiProxy';
 import { supabase } from '../lib/supabase';
 import type {
     ActivityConfig,
@@ -180,25 +180,6 @@ const TURN_SIGNAL_MODEL = 'gemini-2.5-flash';
 const SESSION_SUMMARY_MODEL = 'gemini-2.5-flash';
 const TURN_SIGNAL_PROMPT_VERSION = 'tina-reflection-turn-v1';
 const SESSION_SUMMARY_PROMPT_VERSION = 'tina-reflection-session-v1';
-
-function getGeminiApiKey() {
-    return (
-        (import.meta as any).env?.VITE_GEMINI_API_KEY ||
-        (import.meta as any).env?.GEMINI_API_KEY ||
-        process.env.API_KEY ||
-        process.env.GEMINI_API_KEY ||
-        ''
-    );
-}
-
-function getGeminiClient() {
-    const apiKey = getGeminiApiKey();
-    if (!apiKey) {
-        return null;
-    }
-
-    return new GoogleGenAI({ apiKey });
-}
 
 function clampConfidence(value: unknown) {
     const numeric = typeof value === 'number' ? value : Number(value);
@@ -404,10 +385,9 @@ export async function extractAndSaveTurnResearchSignal(payload: {
     utteranceText: string;
     recentMessages: Message[];
     activityConfig: ActivityConfig;
-}): Promise<void> {
-    const ai = getGeminiClient();
-    if (!ai || !payload.utteranceText.trim()) {
-        return;
+}): Promise<TurnResearchSignal | null> {
+    if (!payload.utteranceText.trim()) {
+        return null;
     }
 
     const recentContext = payload.recentMessages
@@ -436,7 +416,7 @@ ${payload.utteranceText}
 `.trim();
 
     try {
-        const response = await ai.models.generateContent({
+        const response = await proxyGenerateContent({
             model: TURN_SIGNAL_MODEL,
             contents: prompt,
             config: {
@@ -448,7 +428,7 @@ ${payload.utteranceText}
 
         const parsed = safeParseJSON<any>(response.text || '');
         if (!parsed) {
-            return;
+            return null;
         }
 
         const normalized = normalizeTurnSignal(parsed, payload);
@@ -502,8 +482,13 @@ ${payload.utteranceText}
         if (error) {
             console.error('Failed to save turn research signal:', error);
         }
+        // Returned (even if the save failed) so the caller can use the LLM's
+        // reflective_depth judgment to correct the lexical classifier's
+        // running state for subsequent turns.
+        return normalized;
     } catch (error) {
         console.warn('Turn research extraction failed:', error);
+        return null;
     }
 }
 
@@ -514,11 +499,6 @@ export async function synthesizeAndSaveSessionResearchSummary(payload: {
     activityConfig: ActivityConfig;
     messages: Message[];
 }): Promise<void> {
-    const ai = getGeminiClient();
-    if (!ai) {
-        return;
-    }
-
     const learnerTranscript = payload.messages
         .filter((message) => message.role === 'user')
         .map((message, index) => `Turn ${index + 1}: ${message.text}`)
@@ -545,7 +525,7 @@ ${learnerTranscript}
 `.trim();
 
     try {
-        const response = await ai.models.generateContent({
+        const response = await proxyGenerateContent({
             model: SESSION_SUMMARY_MODEL,
             contents: prompt,
             config: {

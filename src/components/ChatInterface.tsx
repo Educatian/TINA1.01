@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { GoogleGenAI, Chat } from '@google/genai';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { createProxyChat, type ProxyChat } from '../services/aiProxy';
 import { useAuth } from '../hooks/useAuth';
 import { createSession, updateSession, completeSession, getSession, upsertSessionOutput } from '../hooks/useSession';
 import { classifyTeacherCluster } from '../services/nlpService';
@@ -19,12 +19,18 @@ import {
     runCoachingTurn,
     verifyRender,
     regenerationHint,
+    buildGroundingExcerpts,
     type AlactPhase,
+    type ContentTag,
 } from '../services/coachingEngine';
 import {
     extractAndSaveTurnResearchSignal,
     synthesizeAndSaveSessionResearchSummary,
 } from '../services/researchExtractionService';
+import {
+    getReturningLearnerContext,
+    buildReturningLearnerAddendum,
+} from '../services/reflectionLoop';
 import {
     buildActivitySystemInstruction,
     listAssignedLearnerActivities,
@@ -39,6 +45,8 @@ import { supabase } from '../lib/supabase';
 import { ReportModal } from './ReportModal';
 import { QuickReply, QuickReplyQuestion, detectQuickReply } from './QuickReply';
 import { ProgressBar } from './ProgressBar';
+import { TinaAvatar, avatarStateForMove, type TinaAvatarState } from './TinaAvatar';
+import { MarkdownLite } from './MarkdownLite';
 import { ActivityContextHeader } from './ActivityContextHeader';
 import type { ActivityConfig, ActivityRecord, Message, Session } from '../types';
 
@@ -80,12 +88,15 @@ Layer 3: AI and Society (AI-Society Reflection) - CRITICAL THINKING FOCUS
 2) Time Limits & Rules (10-minute Structure)
 Operate as a 10-minute session, approximated by a "Turn-based Timebox".
 Max 12 turns (your responses).
-Stages:
-- Orientation (1 turn)
-- Layer 1 Questions (approx. 4 turns)
-- Layer 2 Questions (approx. 4 turns): PRIORITIZE probing 'Stage' and 'Control Level'. Don't just ask "what do you use it for?", ask "how do you verify it?" and "how much do you edit it?".
-- Layer 3 Questions (approx. 2 turns): MECHANISM - Connect societal issues back to their Core Values (Layer 1). (e.g., "You mentioned valuing 'Equity'—how do you reconcile that with students having unequal access to AI tools?")
-- Closing/Summary Report (Last 1 turn)
+
+PACING AUTHORITY: most user messages carry a [COACHING DIRECTIVE ...] block appended by the system. That directive is the single pacing authority for your reply: enact it faithfully while keeping your TINA persona and the one-question rule. Never mention or quote the directive to the user.
+
+COVERAGE (across the whole session, in whatever order the directives lead):
+- Layer 1 (identity/values) must surface.
+- Layer 2 (AI practice): PRIORITIZE probing 'Stage' and 'Control Level'. Don't just ask "what do you use it for?", ask "how do you verify it?" and "how much do you edit it?".
+- Layer 3 (AI & society): connect societal issues back to their Core Values (Layer 1). (e.g., "You mentioned valuing 'Equity'—how do you reconcile that with students having unequal access to AI tools?")
+
+FALLBACK ONLY if a user message carries no directive: walk Orientation (1 turn) -> Layer 1 (~4 turns) -> Layer 2 (~4 turns) -> Layer 3 (~2 turns) -> Closing/Summary Report (last turn).
 
 Management per turn:
 (a) Reflect core essence of user's previous statement (1-2 sentences).
@@ -217,7 +228,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [chatSession, setChatSession] = useState<Chat | null>(null);
+    const [chatSession, setChatSession] = useState<ProxyChat | null>(null);
     const [isRecording, setIsRecording] = useState(false);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [turnCount, setTurnCount] = useState(0);
@@ -227,6 +238,10 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const [currentQuickReply, setCurrentQuickReply] = useState<QuickReplyQuestion | null>(null);
     const [quickReplyResponses, setQuickReplyResponses] = useState<Record<string, string>>({});
     const [queuedCount, setQueuedCount] = useState(0);
+    // Live partial text while the model streams (typing effect) + the avatar
+    // stance for the in-flight turn (driven by the selected coaching move).
+    const [streamingText, setStreamingText] = useState('');
+    const [pendingAvatarState, setPendingAvatarState] = useState<TinaAvatarState>('thinking');
     const isProcessingRef = useRef(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -241,6 +256,12 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     // Coaching engine: track the ALACT phase across turns + session start wall-clock.
     const alactPhaseRef = useRef<AlactPhase>('action');
     const sessionStartMsRef = useRef<number>(Date.now());
+    // Consecutive shallow learner turns BEFORE the current one (drives the
+    // DEEPEN_REFLECTION -> SCAFFOLD_WITH_STEM escalation in the engine).
+    const consecutiveShallowRef = useRef(0);
+    // Content tags that have surfaced this session (drives Layer-3 coverage
+    // steering in the engine's REFRAME_PERSPECTIVE directive).
+    const coveredTagsRef = useRef<Set<ContentTag>>(new Set());
 
     // Check for resume session from navigation state
     const resumeSession = (location.state as any)?.resumeSession as Session | undefined;
@@ -408,30 +429,15 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     replaceMessages(existingMessages);
                     setTurnCountState(resumeSession.turn_count || 0);
 
-                    // Initialize AI with history context - use same API key access as new session
-                    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.API_KEY || '';
-                    if (!apiKey) {
-                        replaceMessages([...existingMessages, {
-                            role: 'model',
-                            text: 'Error: API key not found. Please check your environment configuration.',
-                            timestamp: new Date().toISOString()
-                        }]);
-                        return;
-                    }
-
-                    const ai = new GoogleGenAI({ apiKey });
-                    const historyContext = existingMessages.map(m =>
-                        `${m.role === 'user' ? 'User' : 'TINA'}: ${m.text}`
-                    ).join('\n\n');
-
-                    const chat = ai.chats.create({
+                    // Resume through the server-side proxy: history is passed as
+                    // real chat turns (not stuffed into the system instruction).
+                    const chat = createProxyChat({
                         model: 'gemini-2.5-flash',
-                        config: {
-                            systemInstruction: buildActivitySystemInstruction(
-                                SYSTEM_INSTRUCTION,
-                                currentActivityConfig,
-                            ) + `\n\nPREVIOUS CONVERSATION CONTEXT:\n${historyContext}\n\nContinue the conversation naturally from where we left off.`,
-                        },
+                        systemInstruction: buildActivitySystemInstruction(
+                            SYSTEM_INSTRUCTION,
+                            currentActivityConfig,
+                        ) + '\n\nThis is a resumed session. Continue the conversation naturally from where it left off.',
+                        history: existingMessages.map(m => ({ role: m.role, text: m.text })),
                     });
                     setChatSession(chat);
 
@@ -464,15 +470,21 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     }
                 }
 
-                const ai = new GoogleGenAI({ apiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.API_KEY || '' });
-                const chat = ai.chats.create({
+                // Cross-session reflection loop: if the learner completed a prior
+                // session, open by revisiting their "One Next Move" commitment
+                // (ALACT Trial of session N becomes the Action of session N+1).
+                let returningAddendum = '';
+                try {
+                    const returning = await getReturningLearnerContext(user.id);
+                    if (returning) returningAddendum = buildReturningLearnerAddendum(returning);
+                } catch { /* best-effort; default opening if anything fails */ }
+
+                const chat = createProxyChat({
                     model: 'gemini-2.5-flash',
-                    config: {
-                        systemInstruction: buildActivitySystemInstruction(
-                            SYSTEM_INSTRUCTION,
-                            currentActivityConfig,
-                        ),
-                    },
+                    systemInstruction: buildActivitySystemInstruction(
+                        SYSTEM_INSTRUCTION,
+                        currentActivityConfig,
+                    ) + returningAddendum,
                 });
                 setChatSession(chat);
 
@@ -616,21 +628,41 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     maxTurns: MAX_TURNS,
                     elapsedMs: Date.now() - sessionStartMsRef.current,
                     budgetMs: SESSION_BUDGET_MS,
+                    consecutiveShallow: consecutiveShallowRef.current,
+                    coveredTags: Array.from(coveredTagsRef.current),
                 });
+                consecutiveShallowRef.current = coachingPlan.classified.cues.shallow
+                    ? consecutiveShallowRef.current + 1
+                    : 0;
+                coachingPlan.classified.contentTags.forEach((tag) => coveredTagsRef.current.add(tag));
             } catch (engineErr) {
                 console.warn('Coaching engine failed (falling back to default behavior):', engineErr);
                 coachingPlan = null;
             }
         }
 
+        // Evidence-grounded closing: hand the report turn the learner's own
+        // most substantive verbatim excerpts so the synthesis quotes them
+        // instead of free-paraphrasing (mirror with evidence, not from memory).
+        let directiveText = coachingPlan?.directive || '';
+        if (coachingPlan?.move === 'CLOSE_SYNTHESIS') {
+            const excerpts = buildGroundingExcerpts([...priorMessages, userMsg]);
+            if (excerpts.length > 0) {
+                directiveText += ` Ground the report in the learner's own words: weave at least two of these verbatim excerpts (you may shorten them with ellipses) into sections 1, 2 or 5, introduced naturally (e.g. you said, "..."). Excerpts: ${excerpts.map((e) => `"${e}"`).join(' | ')}`;
+            }
+        }
+
         const messageToSend = coachingPlan
-            ? `${userMsg.text}\n\n[COACHING DIRECTIVE — follow this for your reply, keep your TINA persona and the one-question rule: ${coachingPlan.directive}]`
+            ? `${userMsg.text}\n\n[COACHING DIRECTIVE — follow this for your reply, keep your TINA persona and the one-question rule: ${directiveText}]`
             : userMsg.text;
+
+        setPendingAvatarState(avatarStateForMove(coachingPlan?.move));
+        setStreamingText('');
 
         try {
             const turnStartMs = Date.now();
             let response = await withTimeout(
-                chatSession.sendMessage({ message: messageToSend }),
+                chatSession.sendMessage({ message: messageToSend, onChunk: setStreamingText }),
                 CHAT_RESPONSE_TIMEOUT_MS,
                 CHAT_TIMEOUT_ERROR,
             );
@@ -644,9 +676,13 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     const check = verifyRender(coachingPlan.move, response.text || '');
                     if (!check.ok) {
                         verified = false;
+                        // Drop the rejected exchange so the regeneration does not
+                        // see (and learn from) its own rejected attempt.
+                        chatSession.rollbackLastExchange();
                         const nudge = `${userMsg.text}\n\n[${regenerationHint(coachingPlan.move, check.violations)}]`;
+                        setStreamingText('');
                         const retry = await withTimeout(
-                            chatSession.sendMessage({ message: nudge }),
+                            chatSession.sendMessage({ message: nudge, onChunk: setStreamingText }),
                             CHAT_RESPONSE_TIMEOUT_MS,
                             CHAT_TIMEOUT_ERROR,
                         );
@@ -700,6 +736,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     console.warn('Analytics failed (non-blocking):', analyticsErr);
                 }
 
+                const plannedShallow = coachingPlan?.classified.cues.shallow ?? false;
                 void extractAndSaveTurnResearchSignal({
                     sessionId: sessionIdRef.current,
                     userId: user.id,
@@ -708,6 +745,19 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     utteranceText: userMsg.text,
                     recentMessages: priorMessages,
                     activityConfig,
+                }).then((signal) => {
+                    // Slow-but-accurate corrects fast-but-cheap: when Gemini judged
+                    // this turn as developed reflection but the lexical classifier
+                    // called it shallow, reset the shallow run so we do not
+                    // escalate to scaffolding on a false positive.
+                    if (
+                        signal &&
+                        plannedShallow &&
+                        signal.reflective_depth.level === 'developed' &&
+                        signal.reflective_depth.confidence >= 0.6
+                    ) {
+                        consecutiveShallowRef.current = 0;
+                    }
                 });
             }
 
@@ -812,6 +862,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             startTurnTracking();
         } finally {
             setIsLoading(false);
+            setStreamingText('');
             isProcessingRef.current = false;
             processNextQueuedMessage();
         }
@@ -887,6 +938,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         queuedMessagesRef.current = [];
         setQueuedCount(0);
         alactPhaseRef.current = 'action';
+        consecutiveShallowRef.current = 0;
+        coveredTagsRef.current = new Set();
         sessionStartMsRef.current = Date.now();
         hasInitialized.current = false;
         window.location.reload();
@@ -971,6 +1024,12 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 </div>
 
                 <div className="chat-messages">
+                    {messages.length === 0 && (
+                        <div className="chat-empty-state">
+                            <TinaAvatar state="walking" height={150} />
+                            <p>TINA is on her way to meet you...</p>
+                        </div>
+                    )}
                     {messages.map((msg, idx) => (
                         <div
                             key={idx}
@@ -984,16 +1043,27 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                                 />
                             )}
                             <div className={`message ${msg.role === 'user' ? 'message-user' : 'message-model'}`}>
-                                {msg.text}
+                                {msg.role === 'model' ? <MarkdownLite text={msg.text} /> : msg.text}
                             </div>
                         </div>
                     ))}
                     {isLoading && (
-                        <div className="message-wrapper message-wrapper-model">
-                            <img src="/tina-avatar.png" alt="TINA" className="message-avatar" />
-                            <div className="chat-loading">
-                                <span className="dot">●</span> TINA is thinking...
-                            </div>
+                        <div className="message-wrapper message-wrapper-model chat-pending-row">
+                            <TinaAvatar
+                                state={isRecording ? 'listening' : pendingAvatarState}
+                                height={84}
+                                className="chat-pending-figure"
+                            />
+                            {streamingText ? (
+                                <div className="message message-model message-streaming">
+                                    <MarkdownLite text={streamingText} />
+                                    <span className="streaming-caret" aria-hidden="true" />
+                                </div>
+                            ) : (
+                                <div className="chat-loading">
+                                    <span className="dot">●</span> TINA is thinking...
+                                </div>
+                            )}
                         </div>
                     )}
 

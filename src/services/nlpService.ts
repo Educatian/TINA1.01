@@ -1,7 +1,4 @@
-import { HfInference } from '@huggingface/inference';
-
-// Initialize HuggingFace client
-const hf = new HfInference(import.meta.env.VITE_HUGGINGFACE_API_KEY);
+﻿import { proxyHf } from './aiProxy';
 
 export interface SentimentResult {
     label: string;
@@ -18,7 +15,8 @@ export interface SessionAnalytics {
 // Analyze sentiment of a single text
 export async function analyzeSentiment(text: string): Promise<SentimentResult[]> {
     try {
-        const result = await hf.textClassification({
+        const result = await proxyHf({
+            task: 'text-classification',
             model: 'cardiffnlp/twitter-roberta-base-sentiment-latest',
             inputs: text.slice(0, 500), // Limit text length
         });
@@ -139,7 +137,8 @@ export async function classifyTeacherCluster(
             return getDefaultResult();
         }
 
-        const result = await hf.zeroShotClassification({
+        const result = await proxyHf({
+            task: 'zero-shot-classification',
             model: 'facebook/bart-large-mnli',
             inputs: userText,
             parameters: {
@@ -212,7 +211,8 @@ export interface AdvancedAnalysisResult {
 // 1. Emotion Analysis (6 emotions)
 export async function analyzeEmotion(text: string): Promise<AdvancedAnalysisResult> {
     try {
-        const result = await hf.textClassification({
+        const result = await proxyHf({
+            task: 'text-classification',
             model: 'j-hartmann/emotion-english-distilroberta-base',
             inputs: text.slice(0, 500),
         });
@@ -245,7 +245,8 @@ const DISCOURSE_MAP: Record<string, string> = {
 
 export async function analyzeDiscourse(text: string): Promise<AdvancedAnalysisResult> {
     try {
-        const result = await hf.zeroShotClassification({
+        const result = await proxyHf({
+            task: 'zero-shot-classification',
             model: 'facebook/bart-large-mnli',
             inputs: text.slice(0, 500),
             parameters: { candidate_labels: DISCOURSE_LABELS }
@@ -274,7 +275,8 @@ const EFFICACY_MAP: Record<string, string> = {
 
 export async function analyzeSelfEfficacy(text: string): Promise<AdvancedAnalysisResult> {
     try {
-        const result = await hf.zeroShotClassification({
+        const result = await proxyHf({
+            task: 'zero-shot-classification',
             model: 'facebook/bart-large-mnli',
             inputs: text.slice(0, 500),
             parameters: { candidate_labels: EFFICACY_LABELS }
@@ -303,7 +305,8 @@ const BELIEF_PRACTICE_MAP: Record<string, string> = {
 
 export async function analyzeBeliefPractice(text: string): Promise<AdvancedAnalysisResult> {
     try {
-        const result = await hf.zeroShotClassification({
+        const result = await proxyHf({
+            task: 'zero-shot-classification',
             model: 'facebook/bart-large-mnli',
             inputs: text.slice(0, 500),
             parameters: { candidate_labels: BELIEF_PRACTICE_LABELS }
@@ -334,7 +337,8 @@ const AI_ATTITUDE_MAP: Record<string, string> = {
 
 export async function analyzeAIAttitude(text: string): Promise<AdvancedAnalysisResult> {
     try {
-        const result = await hf.zeroShotClassification({
+        const result = await proxyHf({
+            task: 'zero-shot-classification',
             model: 'facebook/bart-large-mnli',
             inputs: text.slice(0, 500),
             parameters: { candidate_labels: AI_ATTITUDE_LABELS }

@@ -34,12 +34,14 @@ For the structured activity customization model that keeps one shared chatbot wh
 
 | Feature | Description |
 |---------|-------------|
-| 💬 **Reflective Dialogue** | AI-guided conversation using Gemini 2.5 Flash |
-| 📊 **Personalized Reports** | Detailed PDF reports with teacher profiling |
+| 💬 **Reflective Dialogue** | AI-guided conversation using Gemini 2.5 Flash, streamed with a live typing effect |
+| 🔐 **Server-Side AI Proxy** | All Gemini/HuggingFace keys live in a Netlify Function (`netlify/functions/ai-proxy.mts`) — never in the browser bundle. Supabase-JWT auth + per-user rate limiting |
+| 📊 **Personalized Reports** | Detailed PDF reports with teacher profiling, grounded in the learner's own verbatim excerpts |
+| 🔁 **Cross-Session Loop** | The next session opens by revisiting the previous report's "One Next Move" (+ a learner-chosen carry-forward question) — ALACT as a real cycle |
+| 📈 **Reflection Trajectory** | Learners see their own reflection-depth bars (turn by turn) in the closing report |
 | 🎓 **Teacher Clustering** | NLP-based classification into 3 teacher types |
-| 📈 **Progress Tracking** | Visual progress bar showing session advancement |
 | 🎤 **Voice Input** | Speech-to-text for natural conversation |
-| 📱 **Responsive Design** | Beautiful on desktop and mobile |
+| 🧍 **TINA Character States** | Full-body avatar (idle/thinking/listening/walking/celebrating) driven by the selected coaching move; calm micro-motion, `prefers-reduced-motion` respected |
 | 🧭 **Coaching-Move Engine** | Deterministic per-turn coaching moves (Korthagen ALACT + reflection levels) that steer the LLM *and* log research telemetry |
 
 ---
@@ -51,7 +53,7 @@ TINA includes a **pure, unit-tested coaching engine** (`src/services/coachingEng
 **Theory anchor — Korthagen's ALACT reflection cycle**
 (Action → Looking back → Awareness of essential aspects → Creating alternative methods → Trial; Korthagen & Vasalos, 2005) plus **reflection levels** (technical → descriptive → critical; Van Manen, 1977; Hatton & Smith, 1995).
 
-**The 8-move taxonomy** (single source of truth, consumed by selector, renderer directive, logger, and dashboard):
+**The 9-move taxonomy** (single source of truth, consumed by selector, renderer directive, logger, and dashboard):
 
 | Move | ALACT phase | Purpose |
 |------|-------------|---------|
@@ -59,6 +61,7 @@ TINA includes a **pure, unit-tested coaching engine** (`src/services/coachingEng
 | `LOOK_BACK` | Looking back | What happened / was wanted / felt / done |
 | `NAME_ESSENTIAL` | Awareness | Name the identity / value / AI tension underneath |
 | `DEEPEN_REFLECTION` | Awareness | Push descriptive → critical when a turn stays shallow |
+| `SCAFFOLD_WITH_STEM` | Awareness | After 2+ consecutive shallow turns, offer a sentence stem instead of another open why-probe |
 | `REFRAME_PERSPECTIVE` | Creating alternatives | Invite an alternative framing |
 | `CONNECT_VALUE_TO_ACTION` | Trial | Connect the value to one small next move to try |
 | `AFFIRM_AND_HOLD` | Looking back | Validate + hold a safe, low-confusion space |
@@ -128,23 +131,32 @@ cp .env.example .env
 Create a `.env` file with:
 
 ```env
-VITE_GEMINI_API_KEY=your_gemini_api_key
-VITE_HUGGINGFACE_API_KEY=your_huggingface_api_key
+# client-side (safe to expose)
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# server-side ONLY — read by netlify/functions/ai-proxy.mts
+GEMINI_API_KEY=your_gemini_api_key
+HF_API_KEY=your_huggingface_api_key
 ```
 
 ### Run Locally
 
 ```bash
-npm run dev
+netlify dev   # serves Vite AND the AI proxy function together
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-Notes:
-- `VITE_GEMINI_API_KEY` is the primary frontend key used by the chat experience.
-- `VITE_HUGGINGFACE_API_KEY` is required for the analytics and clustering features.
+Security notes:
+- AI keys are **never** compiled into the client bundle. All Gemini/HuggingFace
+  calls go through `/.netlify/functions/ai-proxy`, which verifies the learner's
+  Supabase access token and enforces a per-user rate limit
+  (apply `tina-api-proxy.sql` to enable the limit; auth is enforced regardless).
+- Existing Netlify sites keep working without dashboard changes: the function
+  falls back to the legacy `VITE_`-prefixed env values server-side.
+- Optional migrations: `tina-coaching-telemetry.sql` (move telemetry),
+  `tina-api-proxy.sql` (rate limit), `tina-reflection-loop.sql` (carry-forward).
 
 ---
 

@@ -1,0 +1,214 @@
+/* ============================================================================
+   TINA — CROSS-SESSION REFLECTION LOOP
+
+   Korthagen's ALACT cycle only becomes a CYCLE when the Trial of one session
+   feeds the Action of the next. The closing report already asks for
+   "One Next Move" and "Questions To Carry Forward" — this module closes the
+   loop:
+
+     1. getReturningLearnerContext(userId): pulls the most recent completed
+        session's "One Next Move" (+ a carried question, if the learner chose
+        one) so the NEXT session opens by revisiting the commitment.
+     2. saveCarryForward / getLatestCarryForward: the learner picks ONE
+        carry-forward question in the report modal. Stored in the
+        reflection_carryforward table when migrated (tina-reflection-loop.sql),
+        with a localStorage fallback so the feature works before migration.
+     3. getCoachingTurnsForSession: per-turn reflection levels for the
+        learner-facing depth trajectory in the report (metacognitive mirror).
+
+   Everything here is best-effort and feature-detected; failures degrade to
+   "behave exactly like before" — the live class is never blocked.
+   ========================================================================== */
+
+import { supabase } from '../lib/supabase';
+
+export interface ReportSection {
+    title: string;
+    content: string;
+}
+
+/** Same section grammar as ReportModal: "**1) Title**content..." */
+export function parseReportSections(report: string | null | undefined): ReportSection[] {
+    if (!report) return [];
+    const sections: ReportSection[] = [];
+    const regex = /\*\*(\d+\).*?)\*\*([\s\S]*?)(?=\*\*\d+\)|$)/g;
+    let match;
+    while ((match = regex.exec(report)) !== null) {
+        sections.push({ title: match[1].trim(), content: match[2].trim() });
+    }
+    return sections;
+}
+
+export function extractNextMove(report: string | null | undefined): string | null {
+    const section = parseReportSections(report).find((s) =>
+        s.title.toLowerCase().includes('next move'),
+    );
+    if (!section) return null;
+    const text = section.content.replace(/^\(|\)$/g, '').trim();
+    if (text.length < 5) return null;
+    return text.slice(0, 600);
+}
+
+export function extractCarryQuestions(report: string | null | undefined): string[] {
+    const section = parseReportSections(report).find((s) =>
+        s.title.toLowerCase().includes('carry forward'),
+    );
+    if (!section) return [];
+    return section.content
+        .split('\n')
+        .map((line) => line.replace(/^\s*(?:Q\d+\s*[:.)-]?|[-*•])\s*/i, '').trim())
+        .filter((line) => line.length > 10)
+        .slice(0, 3);
+}
+
+// ---------------------------------------------------------------------------
+// Carry-forward storage (table when migrated, localStorage fallback)
+// ---------------------------------------------------------------------------
+
+const CARRY_LOCAL_KEY = (userId: string) => `tina-carryforward-${userId}`;
+let carryTableDisabled = false;
+
+function isMissingSchemaError(error: { code?: string; message?: string } | null): boolean {
+    if (!error) return false;
+    const code = error.code || '';
+    const message = (error.message || '').toLowerCase();
+    return (
+        code === '42P01' ||
+        code === 'PGRST205' ||
+        message.includes('does not exist') ||
+        message.includes('could not find the table') ||
+        message.includes('schema cache')
+    );
+}
+
+export async function saveCarryForward(userId: string, sessionId: string, question: string): Promise<void> {
+    const trimmed = question.trim().slice(0, 600);
+    if (!trimmed) return;
+    try {
+        window.localStorage.setItem(
+            CARRY_LOCAL_KEY(userId),
+            JSON.stringify({ question: trimmed, sessionId, savedAt: new Date().toISOString() }),
+        );
+    } catch { /* private mode etc. */ }
+
+    if (carryTableDisabled) return;
+    try {
+        const { error } = await supabase.from('reflection_carryforward').insert({
+            user_id: userId,
+            session_id: sessionId,
+            question: trimmed,
+        });
+        if (error && isMissingSchemaError(error)) {
+            carryTableDisabled = true;
+            console.info('[reflection loop] reflection_carryforward table not found — using localStorage only (apply tina-reflection-loop.sql to enable).');
+        }
+    } catch { /* non-blocking */ }
+}
+
+export async function getLatestCarryForward(userId: string): Promise<string | null> {
+    if (!carryTableDisabled) {
+        try {
+            const { data, error } = await supabase
+                .from('reflection_carryforward')
+                .select('question, created_at')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(1);
+            if (error) {
+                if (isMissingSchemaError(error)) carryTableDisabled = true;
+            } else if (data && data[0]?.question) {
+                return String(data[0].question);
+            }
+        } catch { /* fall through to localStorage */ }
+    }
+    try {
+        const raw = window.localStorage.getItem(CARRY_LOCAL_KEY(userId));
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed?.question) return String(parsed.question);
+        }
+    } catch { /* ignore */ }
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// Returning-learner context for the next session's opening
+// ---------------------------------------------------------------------------
+
+export interface ReturningLearnerContext {
+    nextMove: string;
+    completedAt: string | null;
+    carriedQuestion: string | null;
+}
+
+export async function getReturningLearnerContext(userId: string): Promise<ReturningLearnerContext | null> {
+    try {
+        const { data, error } = await supabase
+            .from('sessions')
+            .select('id, summary_report, completed_at')
+            .eq('user_id', userId)
+            .not('completed_at', 'is', null)
+            .not('summary_report', 'is', null)
+            .order('completed_at', { ascending: false })
+            .limit(1);
+        if (error || !data || data.length === 0) return null;
+
+        const nextMove = extractNextMove(data[0].summary_report);
+        if (!nextMove) return null;
+        const carriedQuestion = await getLatestCarryForward(userId);
+        return {
+            nextMove,
+            completedAt: data[0].completed_at || null,
+            carriedQuestion,
+        };
+    } catch {
+        return null;
+    }
+}
+
+/** System-instruction addendum that turns ALACT into a real cross-session cycle. */
+export function buildReturningLearnerAddendum(ctx: ReturningLearnerContext): string {
+    const when = ctx.completedAt
+        ? new Date(ctx.completedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+        : 'their last session';
+    const carried = ctx.carriedQuestion
+        ? `\nThey also chose to carry this question forward: "${ctx.carriedQuestion}"`
+        : '';
+    return `
+
+RETURNING LEARNER CONTEXT (cross-session reflection loop)
+In their previous TINA session (${when}), this learner committed to one small next move:
+"${ctx.nextMove}"${carried}
+
+For your FIRST message of this session: skip the full onboarding introduction. Greet them back warmly in one sentence, then ask ONE short question inviting them to look back at what actually happened when they tried that next move (or what got in the way, if they did not get to it — treat that without any judgment). Anchor this session's reflection cycle on that real attempt.`;
+}
+
+// ---------------------------------------------------------------------------
+// Learner-facing reflection-depth trajectory (report modal)
+// ---------------------------------------------------------------------------
+
+export interface TrajectoryPoint {
+    turnIndex: number;
+    reflectionLevel: 'technical' | 'descriptive' | 'critical';
+    move: string;
+}
+
+export async function getCoachingTurnsForSession(sessionId: string): Promise<TrajectoryPoint[]> {
+    try {
+        const { data, error } = await supabase
+            .from('coaching_turns')
+            .select('turn_index, reflection_level, move')
+            .eq('session_id', sessionId)
+            .order('turn_index', { ascending: true });
+        if (error || !data) return [];
+        return data
+            .filter((row: any) => ['technical', 'descriptive', 'critical'].includes(row.reflection_level))
+            .map((row: any) => ({
+                turnIndex: row.turn_index,
+                reflectionLevel: row.reflection_level,
+                move: row.move,
+            }));
+    } catch {
+        return [];
+    }
+}

@@ -2964,3 +2964,242 @@ body {
     align-items: stretch;
   }
 }
+
+/* ============================================================================
+   TINA avatar states + reflection-loop UI (added with the coaching upgrade)
+   Calm-motion principle: slow, small, and fully disabled under
+   prefers-reduced-motion. This is a quiet reflection space.
+   ========================================================================== */
+
+.tina-avatar {
+    user-select: none;
+    pointer-events: none;
+    display: inline-block;
+}
+
+.tina-avatar-idle,
+.tina-avatar-thinking {
+    animation: tina-float 4.5s ease-in-out infinite;
+}
+
+.tina-avatar-listening {
+    animation: tina-sway 5s ease-in-out infinite;
+    transform-origin: 50% 90%;
+}
+
+.tina-avatar-celebrating {
+    animation: tina-pop 0.9s ease-out 1;
+}
+
+@keyframes tina-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+}
+
+@keyframes tina-sway {
+    0%, 100% { transform: rotate(-1.2deg); }
+    50% { transform: rotate(1.2deg); }
+}
+
+@keyframes tina-pop {
+    0% { transform: scale(0.92); opacity: 0.6; }
+    60% { transform: scale(1.05); opacity: 1; }
+    100% { transform: scale(1); }
+}
+
+.chat-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 16px;
+    color: #7f8c8d;
+    font-size: 0.95rem;
+}
+
+.chat-empty-state .tina-avatar {
+    animation: tina-walk-in 1.4s ease-out 1, tina-float 4.5s ease-in-out 1.4s infinite;
+}
+
+@keyframes tina-walk-in {
+    0% { transform: translateX(-48px); opacity: 0; }
+    100% { transform: translateX(0); opacity: 1; }
+}
+
+.chat-pending-row {
+    align-items: flex-end;
+}
+
+.chat-pending-figure {
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+.message-streaming .streaming-caret {
+    display: inline-block;
+    width: 8px;
+    height: 1em;
+    margin-left: 3px;
+    vertical-align: text-bottom;
+    background: #F4D03F;
+    border-radius: 2px;
+    animation: caret-blink 1s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+    0%, 60% { opacity: 1; }
+    61%, 100% { opacity: 0; }
+}
+
+.markdown-lite p {
+    margin: 0 0 0.55em 0;
+}
+
+.markdown-lite p:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-lite ul,
+.markdown-lite ol {
+    margin: 0.3em 0 0.6em 1.3em;
+    padding: 0;
+}
+
+.markdown-lite li {
+    margin-bottom: 0.25em;
+}
+
+/* --- progress bar walker ------------------------------------------------- */
+
+.progress-track-stage {
+    position: relative;
+    padding-top: 38px;
+}
+
+.progress-walker-wrap {
+    position: absolute;
+    bottom: 12px;
+    line-height: 0;
+    transition: left 0.9s ease;
+    z-index: 1;
+}
+
+/* --- report: reflection-depth trajectory --------------------------------- */
+
+.report-tina-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 8px;
+}
+
+.report-trajectory {
+    margin: 24px 0;
+    padding: 18px 20px;
+    background: #FDF8E8;
+    border-radius: 14px;
+}
+
+.report-trajectory h3 {
+    margin: 0 0 6px 0;
+    color: #2C3E50;
+    font-size: 1.05rem;
+}
+
+.report-trajectory-note {
+    margin: 0 0 14px 0;
+    color: #7f8c8d;
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.trajectory-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 72px;
+    padding: 0 2px;
+}
+
+.trajectory-bar {
+    flex: 1;
+    max-width: 26px;
+    border-radius: 4px 4px 0 0;
+}
+
+.trajectory-technical { background: #E8DCC0; }
+.trajectory-descriptive { background: #F4D03F; }
+.trajectory-critical { background: #52796F; }
+
+.trajectory-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    font-size: 0.78rem;
+    color: #7f8c8d;
+}
+
+.trajectory-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+/* --- report: carry-one-question-forward ---------------------------------- */
+
+.report-carry {
+    margin: 24px 0;
+    padding: 18px 20px;
+    background: #F4FAF7;
+    border-radius: 14px;
+}
+
+.report-carry h3 {
+    margin: 0 0 6px 0;
+    color: #2C3E50;
+    font-size: 1.05rem;
+}
+
+.carry-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.carry-option {
+    text-align: left;
+    padding: 12px 14px;
+    border: 1.5px solid #d8e6df;
+    border-radius: 10px;
+    background: #fff;
+    color: #2C3E50;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.carry-option:hover {
+    border-color: #52796F;
+    background: #f2f8f5;
+}
+
+.carry-saved {
+    margin: 0;
+    color: #52796F;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tina-avatar,
+    .chat-empty-state .tina-avatar,
+    .message-streaming .streaming-caret {
+        animation: none !important;
+    }
+    .progress-walker-wrap {
+        transition: none;
+    }
+}

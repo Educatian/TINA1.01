@@ -91,6 +91,13 @@ export const MOVES = {
     directive:
       'COACHING MOVE = DEEPEN_REFLECTION. The learner stayed surface-level. Without judging, invite them one layer deeper: ask WHY it matters, what assumption or value sits under it, or what is at stake. One short probing question. Do not supply the answer or lecture.',
   },
+  SCAFFOLD_WITH_STEM: {
+    phase: 'awareness',
+    level: 'critical',
+    desc: 'Scaffold a repeatedly-shallow learner with a sentence stem (no more open why-probes)',
+    directive:
+      'COACHING MOVE = SCAFFOLD_WITH_STEM. The learner has stayed surface-level for more than one turn, so another open "why" question would likely stall them. Offer ONE short sentence stem that fits their last message for them to complete in their own words (for example: "What made that moment matter to me was ___" or "If I am honest, I rely on AI here because ___"). Then ask ONE short question inviting them to finish the stem. No advice, no multiple stems.',
+  },
   REFRAME_PERSPECTIVE: {
     phase: 'alternatives',
     level: 'critical',
@@ -197,7 +204,13 @@ export function classifyTurn(text: string, _history: { role: string; text: strin
   const identityHits = countHits(t, IDENTITY_CUES);
   const aiUseHits = countHits(t, AI_USE_CUES);
   const aiSocietyHits = countHits(t, AI_SOCIETY_CUES);
-  const affectHits = countHits(t, AFFECT_CUES) + HEDGES.filter((h) => t.includes(h)).length;
+  // Genuine affect needs a real emotion/uncertainty word. Hedging alone
+  // ("i think", "maybe") is ordinary academic speech and must NOT trigger
+  // holding moves on plain descriptive turns; two or more hedges in one turn
+  // still reads as real hesitation.
+  const emotionHits = countHits(t, AFFECT_CUES);
+  const hedgeHits = HEDGES.filter((h) => t.includes(h)).length;
+  const affectHits = emotionHits >= 1 || hedgeHits >= 2 ? emotionHits + hedgeHits : 0;
 
   const criticalHits = countHits(t, CRITICAL_CUES);
   const descriptiveHits = countHits(t, DESCRIPTIVE_CUES);
@@ -256,8 +269,10 @@ export interface CoachingState {
   budgetMs?: number;
   /** Classification of the learner turn we are about to respond to. */
   classified: ClassifiedTurn;
-  /** Number of consecutive shallow learner turns so far (incl. current). */
+  /** Consecutive shallow learner turns BEFORE the current one (caller-tracked). */
   consecutiveShallow?: number;
+  /** Content tags that have surfaced at any point this session (caller-tracked). */
+  coveredTags?: ContentTag[];
 }
 
 export interface SelectedMove {
@@ -301,13 +316,17 @@ export function shouldClose(state: CoachingState): boolean {
  * + the ALACT phase to advance to. Priority:
  *   1. End of time/turns  -> CLOSE_SYNTHESIS
  *   2. Strong affect/hesitation (not closing) -> AFFIRM_AND_HOLD (hold the space)
- *   3. Shallow turn while we need awareness -> DEEPEN_REFLECTION
+ *   3. Shallow turn while we need awareness:
+ *        first shallow turn      -> DEEPEN_REFLECTION (open why-probe)
+ *        2+ consecutive shallow  -> SCAFFOLD_WITH_STEM (sentence stem; repeated
+ *                                   open probing without scaffolding stalls
+ *                                   shallow reflectors instead of deepening them)
  *   4. Otherwise -> the move for the current ALACT phase, then advance.
  */
 export function selectMove(state: CoachingState): SelectedMove {
-  const mk = (move: CoachingMove, nextPhase: AlactPhase, reason: string): SelectedMove => ({
+  const mk = (move: CoachingMove, nextPhase: AlactPhase, reason: string, directive?: string): SelectedMove => ({
     move,
-    directive: MOVES[move].directive,
+    directive: directive ?? MOVES[move].directive,
     nextPhase,
     reason,
   });
@@ -336,12 +355,29 @@ export function selectMove(state: CoachingState): SelectedMove {
   //    there) — only where critical reflection is the goal.
   const depthRequired = state.phase === 'awareness' || state.phase === 'alternatives';
   if (depthRequired && c.cues.shallow) {
+    const shallowRun = (state.consecutiveShallow ?? 0) + 1; // incl. current turn
+    if (shallowRun >= 2) {
+      return mk('SCAFFOLD_WITH_STEM', state.phase, 'repeated_shallow_needs_scaffold');
+    }
     return mk('DEEPEN_REFLECTION', state.phase, 'shallow_turn_needs_depth');
   }
 
   // 4) Default: the move for the current phase, then advance one step.
+  //    Coverage steering (single pacing authority lives HERE, not in the
+  //    system prompt's old per-layer turn budget): if the AI-and-society
+  //    layer has not surfaced by the time we create alternatives, point the
+  //    reframe lens at it so Layer 3 is never silently skipped.
   const move = PHASE_TO_MOVE[state.phase];
-  return mk(move, advance(state.phase), `alact_${state.phase}`);
+  let directive = MOVES[move].directive;
+  if (move === 'REFRAME_PERSPECTIVE') {
+    const covered = state.coveredTags ?? [];
+    const aiSocietySurfaced = covered.includes('ai-society') || c.contentTags.includes('ai-society');
+    if (!aiSocietySurfaced) {
+      directive +=
+        ' For this turn, open the alternative through an AI-and-society lens (equity of access, policy gaps, transparency, or whose knowledge AI represents) — that layer has not yet surfaced in this conversation.';
+    }
+  }
+  return mk(move, advance(state.phase), `alact_${state.phase}`, directive);
 }
 
 // --------------------------------------------------------------------------
@@ -418,7 +454,36 @@ export function regenerationHint(move: CoachingMove, violations: string[]): stri
 }
 
 // --------------------------------------------------------------------------
-// 5) Convenience: derive an initial state + run the full pipeline
+// 5) Evidence grounding for the closing report
+// --------------------------------------------------------------------------
+
+/**
+ * buildGroundingExcerpts — PURE. Picks the learner's most substantive turns
+ * (longest + most critical-level markers) so CLOSE_SYNTHESIS can quote the
+ * learner's OWN words instead of free-paraphrasing. Verbatim mirroring is the
+ * stronger reflective intervention, and it pins the report to real evidence.
+ */
+export function buildGroundingExcerpts(
+  history: { role: string; text: string }[],
+  max = 3,
+): string[] {
+  const scored = history
+    .filter((m) => m.role === 'user')
+    .map((m) => {
+      const t = norm(m.text);
+      const wordCount = t ? t.split(' ').filter(Boolean).length : 0;
+      const criticalHits = countHits(t, CRITICAL_CUES);
+      return { text: m.text.trim(), score: wordCount + criticalHits * 10 };
+    })
+    .filter((e) => e.score >= 8); // skip "yes" / "ok" turns
+  scored.sort((a, b) => b.score - a.score);
+  return scored
+    .slice(0, max)
+    .map((e) => (e.text.length > 220 ? `${e.text.slice(0, 217)}...` : e.text));
+}
+
+// --------------------------------------------------------------------------
+// 6) Convenience: derive an initial state + run the full pipeline
 // --------------------------------------------------------------------------
 
 export interface RunInput {
@@ -430,6 +495,7 @@ export interface RunInput {
   elapsedMs?: number;
   budgetMs?: number;
   consecutiveShallow?: number;
+  coveredTags?: ContentTag[];
 }
 
 export interface RunResult extends SelectedMove {
@@ -447,6 +513,7 @@ export function runCoachingTurn(input: RunInput): RunResult {
     budgetMs: input.budgetMs,
     classified,
     consecutiveShallow: input.consecutiveShallow,
+    coveredTags: input.coveredTags,
   };
   const selected = selectMove(state);
   return { ...selected, classified };

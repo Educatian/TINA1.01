@@ -14,6 +14,7 @@ import {
   verifyRender,
   regenerationHint,
   runCoachingTurn,
+  buildGroundingExcerpts,
 } from './coachingEngine.ts';
 
 const baseState = (over = {}) => ({
@@ -33,8 +34,8 @@ test('taxonomy: every move has a phase, level, and a non-trivial directive', () 
   }
 });
 
-test('taxonomy: 8 moves, single source of truth', () => {
-  assert.equal(MOVE_NAMES.length, 8);
+test('taxonomy: 9 moves, single source of truth', () => {
+  assert.equal(MOVE_NAMES.length, 9);
 });
 
 // ---- every move is reachable from selectMove ----
@@ -75,13 +76,27 @@ test('reachable: AFFIRM_AND_HOLD on affect/hesitation', () => {
   assert.equal(s.nextPhase, 'looking_back', 'holding move does NOT advance the phase');
 });
 
-// ---- shallow turn -> DEEPEN_REFLECTION ----
+// ---- shallow turn -> DEEPEN_REFLECTION -> SCAFFOLD_WITH_STEM escalation ----
 test('shallow turn past action -> DEEPEN_REFLECTION', () => {
   const classified = classifyTurn('I just used it for a quiz.');
   assert.equal(classified.reflectionLevel !== 'critical', true);
   const s = selectMove(baseState({ phase: 'awareness', classified }));
   assert.equal(s.move, 'DEEPEN_REFLECTION');
   assert.equal(s.nextPhase, 'awareness', 'deepen stays on the same phase');
+});
+
+test('repeated shallow turns -> SCAFFOLD_WITH_STEM (no endless why-probing)', () => {
+  const classified = classifyTurn('I just used it for a quiz.');
+  const s = selectMove(baseState({ phase: 'awareness', classified, consecutiveShallow: 1 }));
+  assert.equal(s.move, 'SCAFFOLD_WITH_STEM');
+  assert.equal(s.nextPhase, 'awareness', 'scaffold stays on the same phase');
+  assert.equal(s.reason, 'repeated_shallow_needs_scaffold');
+});
+
+test('first shallow turn still gets the open probe (consecutiveShallow 0)', () => {
+  const classified = classifyTurn('I just used it for a quiz.');
+  const s = selectMove(baseState({ phase: 'awareness', classified, consecutiveShallow: 0 }));
+  assert.equal(s.move, 'DEEPEN_REFLECTION');
 });
 
 test('technical one-word turn -> shallow', () => {
@@ -143,6 +158,23 @@ test('classifier: empty / whitespace is technical and shallow, no crash', () => 
   assert.equal(c.cues.wordCount, 0);
 });
 
+test('classifier: a single hedge on a plain descriptive turn is NOT affect', () => {
+  const c = classifyTurn('I think I used it for my lesson plan in my class last week.');
+  assert.equal(c.cues.affect, false, '"i think" alone must not trigger holding moves');
+  const s = selectMove(baseState({ phase: 'looking_back', classified: c }));
+  assert.equal(s.move, 'LOOK_BACK', 'descriptive turn proceeds through the cycle');
+});
+
+test('classifier: stacked hedges still read as real hesitation', () => {
+  const c = classifyTurn('I think maybe it went fine, I guess.');
+  assert.equal(c.cues.affect, true);
+});
+
+test('classifier: genuine emotion word is affect', () => {
+  const c = classifyTurn('Honestly that lesson made me really anxious.');
+  assert.equal(c.cues.affect, true);
+});
+
 // ---- verifyRender: mirror not advisor ----
 test('verify: prescriptive advice flagged', () => {
   const v = verifyRender('NAME_ESSENTIAL', 'You should always fact-check the AI. Here are some tips: step 1...');
@@ -178,6 +210,44 @@ test('regenerationHint mentions the move directive and the violations', () => {
   assert.ok(h.includes('NAME_ESSENTIAL'));
   assert.ok(h.includes('prescriptive_advice'));
   assert.ok(h.toLowerCase().includes('one'));
+});
+
+// ---- coverage steering: Layer 3 lens on the reframe ----
+test('REFRAME_PERSPECTIVE gains the AI-society lens when layer 3 never surfaced', () => {
+  const classified = classifyTurn('I value equity but the reason it matters is my students need me.');
+  const s = selectMove(baseState({ phase: 'alternatives', classified, coveredTags: ['identity', 'ai-use'] }));
+  assert.equal(s.move, 'REFRAME_PERSPECTIVE');
+  assert.ok(s.directive.includes('AI-and-society lens'), 'directive steers toward layer 3');
+});
+
+test('REFRAME_PERSPECTIVE stays plain when AI-society already surfaced', () => {
+  const classified = classifyTurn('I value equity but the reason it matters is access differs.');
+  const s = selectMove(baseState({ phase: 'alternatives', classified, coveredTags: ['identity', 'ai-society'] }));
+  assert.equal(s.move, 'REFRAME_PERSPECTIVE');
+  assert.ok(!s.directive.includes('AI-and-society lens'));
+});
+
+// ---- evidence grounding for the closing report ----
+test('buildGroundingExcerpts picks substantive learner turns, skips fillers', () => {
+  const history = [
+    { role: 'model', text: 'What stood out to you?' },
+    { role: 'user', text: 'yes' },
+    { role: 'user', text: 'I worry because I value fairness but my students do not all have access to the paid tools, and I cannot reconcile that yet.' },
+    { role: 'model', text: 'Say more?' },
+    { role: 'user', text: 'Last week I used Gemini to draft a lesson and then I rewrote most of it myself.' },
+  ];
+  const excerpts = buildGroundingExcerpts(history);
+  assert.ok(excerpts.length >= 2);
+  assert.ok(excerpts.some((e) => e.includes('fairness')));
+  assert.ok(!excerpts.includes('yes'));
+});
+
+test('buildGroundingExcerpts truncates very long turns and caps at 3', () => {
+  const long = 'because I think the tension is real and it matters '.repeat(20);
+  const history = [1, 2, 3, 4, 5].map(() => ({ role: 'user', text: long }));
+  const excerpts = buildGroundingExcerpts(history);
+  assert.equal(excerpts.length, 3);
+  for (const e of excerpts) assert.ok(e.length <= 220);
 });
 
 // ---- full pipeline + a representative ALACT walk ----

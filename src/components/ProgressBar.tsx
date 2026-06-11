@@ -1,4 +1,5 @@
 import React from 'react';
+import { TinaAvatar } from './TinaAvatar';
 
 interface ProgressBarProps {
     currentTurn: number;
@@ -44,11 +45,20 @@ export function ProgressBar({ currentTurn, totalTurns = 12 }: ProgressBarProps) 
                 <span className="progress-label">{stage.label}</span>
                 <span className="progress-count">{Math.min(currentTurn, totalTurns)} / {totalTurns}</span>
             </div>
-            <div className="progress-bar-track">
-                <div
-                    className={`progress-bar-fill ${isNearEnd ? 'near-end' : ''}`}
-                    style={{ width: `${progress}%` }}
-                />
+            <div className="progress-track-stage">
+                <span
+                    className="progress-walker-wrap"
+                    style={{ left: `calc(${progress}% - 13px)` }}
+                    aria-hidden="true"
+                >
+                    <TinaAvatar state={isNearEnd ? 'celebrating' : 'walking'} height={34} />
+                </span>
+                <div className="progress-bar-track">
+                    <div
+                        className={`progress-bar-fill ${isNearEnd ? 'near-end' : ''}`}
+                        style={{ width: `${progress}%` }}
+                    />
+                </div>
             </div>
             <div className="progress-hint">
                 {isNearEnd ? 'Almost there. Your reflection summary is coming soon.' : stage.helper}
