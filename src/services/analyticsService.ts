@@ -372,6 +372,41 @@ export async function saveExperimentAssignment(payload: {
     }
 }
 
+// ============================================================================
+// JOL (judgment of learning) — end-of-session self-rated depth + calibration.
+// Best-effort + feature-detected: works without tina-jol.sql (just not stored).
+// ============================================================================
+
+let jolColumnsDisabled = false;
+
+export async function saveJol(sessionId: string, jol: {
+    rating: number;
+    measuredBand: number;
+    measuredScore: number;
+    gap: number;
+}): Promise<void> {
+    if (jolColumnsDisabled) return;
+    try {
+        const { error } = await supabase.from('sessions').update({
+            jol_rating: jol.rating,
+            jol_measured_band: jol.measuredBand,
+            jol_measured_score: jol.measuredScore,
+            jol_gap: jol.gap,
+            jol_recorded_at: new Date().toISOString(),
+        }).eq('id', sessionId);
+        if (error) {
+            if (isMissingSchemaError(error)) {
+                jolColumnsDisabled = true;
+                console.info('[jol] jol_* columns not found — JOL not persisted (apply tina-jol.sql to enable). The report card still works.');
+            } else {
+                console.warn('Failed to save JOL (non-blocking):', error);
+            }
+        }
+    } catch (e) {
+        console.warn('JOL save threw (non-blocking):', e);
+    }
+}
+
 // Mark PDF downloaded
 export async function markPDFDownloaded(sessionId: string): Promise<void> {
     try {

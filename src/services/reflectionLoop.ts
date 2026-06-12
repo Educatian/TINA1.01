@@ -21,45 +21,20 @@
    ========================================================================== */
 
 import { supabase } from '../lib/supabase';
-
-export interface ReportSection {
-    title: string;
-    content: string;
-}
-
-/** Same section grammar as ReportModal: "**1) Title**content..." */
-export function parseReportSections(report: string | null | undefined): ReportSection[] {
-    if (!report) return [];
-    const sections: ReportSection[] = [];
-    const regex = /\*\*(\d+\).*?)\*\*([\s\S]*?)(?=\*\*\d+\)|$)/g;
-    let match;
-    while ((match = regex.exec(report)) !== null) {
-        sections.push({ title: match[1].trim(), content: match[2].trim() });
-    }
-    return sections;
-}
-
-export function extractNextMove(report: string | null | undefined): string | null {
-    const section = parseReportSections(report).find((s) =>
-        s.title.toLowerCase().includes('next move'),
-    );
-    if (!section) return null;
-    const text = section.content.replace(/^\(|\)$/g, '').trim();
-    if (text.length < 5) return null;
-    return text.slice(0, 600);
-}
-
-export function extractCarryQuestions(report: string | null | undefined): string[] {
-    const section = parseReportSections(report).find((s) =>
-        s.title.toLowerCase().includes('carry forward'),
-    );
-    if (!section) return [];
-    return section.content
-        .split('\n')
-        .map((line) => line.replace(/^\s*(?:Q\d+\s*[:.)-]?|[-*•])\s*/i, '').trim())
-        .filter((line) => line.length > 10)
-        .slice(0, 3);
-}
+// Pure report-grammar + scoring/JOL math lives in reflectionScoring (no data
+// import) so it stays unit-testable; re-exported here for existing call sites.
+export {
+    parseReportSections,
+    extractNextMove,
+    extractCarryQuestions,
+    depthScore,
+    depthBand,
+    computeJol,
+    type ReportSection,
+    type DepthBand,
+    type JolResult,
+} from './reflectionScoring';
+import { extractNextMove } from './reflectionScoring';
 
 // ---------------------------------------------------------------------------
 // Carry-forward storage (table when migrated, localStorage fallback)
@@ -187,13 +162,9 @@ For your FIRST message of this session: skip the full onboarding introduction. G
 // Learner-facing reflection-depth trajectory (report modal)
 // ---------------------------------------------------------------------------
 
-export interface TrajectoryPoint {
-    turnIndex: number;
-    reflectionLevel: 'technical' | 'descriptive' | 'critical';
-    move: string;
-}
+export type { TrajectoryPoint } from './reflectionScoring';
 
-export async function getCoachingTurnsForSession(sessionId: string): Promise<TrajectoryPoint[]> {
+export async function getCoachingTurnsForSession(sessionId: string): Promise<import('./reflectionScoring').TrajectoryPoint[]> {
     try {
         const { data, error } = await supabase
             .from('coaching_turns')

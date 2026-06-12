@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 // not pay for an export the user may never trigger.
 import { useAuth } from '../hooks/useAuth';
 import { getUserSessions } from '../hooks/useSession';
+import { ReflectionJourney } from './ReflectionJourney';
 import type { Message, Session } from '../types';
 
 export function MyAccount() {
@@ -239,6 +240,8 @@ export function MyAccount() {
                     </div>
                 </div>
             )}
+
+            {!loading && <ReflectionJourney sessions={sessions} />}
 
             <div className="account-section">
                 <h2>My Reflection Sessions</h2>
