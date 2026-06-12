@@ -1,13 +1,11 @@
-import { createClient } from '@supabase/supabase-js';
+/* Cloudflare migration: the app now runs entirely on Cloudflare (Pages + Worker
+   + D1). This module used to create a Supabase client; it now re-exports the
+   supabase-js-compatible Cloudflare shim (src/lib/cfClient.ts) under the same
+   `supabase` name, so no feature code had to change. */
+import { cfClient } from './cfClient';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key';
-export const hasSupabaseConfig = Boolean(
-    import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY,
-);
+export const supabase = cfClient;
 
-if (!hasSupabaseConfig) {
-    console.warn('Supabase credentials not found. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local');
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Auth + data are always available through the same-origin Worker, so there is
+// no separate "is configured" gate any more.
+export const hasSupabaseConfig = true;

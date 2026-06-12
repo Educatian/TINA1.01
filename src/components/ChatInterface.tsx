@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import type { RealtimeChannel } from '@supabase/supabase-js';
 import { createProxyChat, type ProxyChat } from '../services/aiProxy';
 import { useAuth } from '../hooks/useAuth';
 import { createSession, updateSession, completeSession, getSession, upsertSessionOutput } from '../hooks/useSession';
@@ -262,7 +261,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const sessionIdRef = useRef<string | null>(null);
     const quickReplyResponsesRef = useRef<Record<string, string>>({});
     const queuedMessagesRef = useRef<string[]>([]);
-    const presenceChannelRef = useRef<RealtimeChannel | null>(null);
+    const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
     // Coaching engine: track the ALACT phase across turns + session start wall-clock.
     const alactPhaseRef = useRef<AlactPhase>('action');
     const sessionStartMsRef = useRef<number>(Date.now());

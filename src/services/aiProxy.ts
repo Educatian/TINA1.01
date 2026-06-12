@@ -17,7 +17,9 @@
 
 import { supabase } from '../lib/supabase';
 
-const PROXY_URL = '/.netlify/functions/ai-proxy';
+// Cloudflare Worker endpoint (same origin). The old Netlify path
+// /.netlify/functions/ai-proxy is replaced by /api/ai.
+const PROXY_URL = '/api/ai';
 
 export class ProxyRateLimitError extends Error {
     constructor() {

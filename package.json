@@ -5,13 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && npm run build:worker",
+    "build:worker": "esbuild cloudflare/worker/index.ts --bundle --format=esm --target=es2022 --conditions=worker,browser --external:node:* --outfile=dist/_worker.js",
     "preview": "vite preview",
-    "test": "node --test src/services/*.test.mjs"
+    "test": "node --test src/services/*.test.mjs",
+    "cf:deploy": "npm run build && wrangler pages deploy dist"
   },
   "dependencies": {
-    "@google/genai": "^1.33.0",
-    "@supabase/supabase-js": "^2.88.0",
     "docx": "^9.5.1",
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",

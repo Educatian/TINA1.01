@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { getActivityOutputs, getAllSessions } from '../hooks/useSession';
 import { useAuth } from '../hooks/useAuth';
@@ -262,7 +261,7 @@ export function AdminDashboard() {
   }, [selectedActivityId]);
 
   useEffect(() => {
-    let presenceChannel: RealtimeChannel | null = null;
+    let presenceChannel: ReturnType<typeof supabase.channel> | null = null;
 
     if (!selectedActivityId || !user) {
       setLiveLearnerCount(0);

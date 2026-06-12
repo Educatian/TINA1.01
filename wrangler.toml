@@ -1,0 +1,13 @@
+# Cloudflare Pages (advanced mode) — TINA on one vendor.
+# Static assets in dist/ are served directly; dist/_worker.js (bundled from
+# cloudflare/worker/) handles /api/*. D1 is the database; JWT_SECRET + AI keys
+# are set as secrets (see docs/cloudflare-migration.md).
+
+name = "tina"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tina-db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"   # from: wrangler d1 create tina-db

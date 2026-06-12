@@ -21,7 +21,6 @@ export default defineConfig(() => {
           // Supabase + the router on every deploy.
           manualChunks: {
             'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-            'vendor-supabase': ['@supabase/supabase-js'],
           },
         },
       },
