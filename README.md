@@ -9,7 +9,15 @@
 
 **An AI-powered reflective coaching tool for educators exploring their teacher identity and AI integration practices**
 
-[🚀 Live Demo](https://tina-adie.netlify.app) • [📖 Documentation](#features) • [🛠️ Setup](#getting-started)
+[☁️ Play the demo](https://tina-7kw.pages.dev) • [🚀 Netlify (class)](https://tina-adie1.netlify.app) • [📖 Documentation](#features) • [🛠️ Setup](#getting-started)
+
+<br/>
+
+<a href="https://github.com/Educatian/TINA1.01/raw/main/public/video/tina-story-narrated.mp4">
+  <img src="public/video/tina-campus-keyframe.png" alt="Watch the TINA story (16s, narrated)" width="640" />
+</a>
+
+▶ **[Watch the 16-second TINA story](https://github.com/Educatian/TINA1.01/raw/main/public/video/tina-story-narrated.mp4)** — a narrated cartoon walkthrough (campus → classroom AI discussion). Or **[play the live all-Cloudflare demo](https://tina-7kw.pages.dev)** (real AI on free Workers AI, no setup).
 
 </div>
 
