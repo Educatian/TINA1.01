@@ -3522,3 +3522,20 @@ body {
 .journey-moves li { display: flex; gap: 12px; align-items: baseline; padding: 10px 12px; background: #fff; border: 1px solid #f0e68c; border-radius: 10px; }
 .journey-move-date { flex-shrink: 0; font-size: 0.78rem; font-weight: 700; color: #B7950B; min-width: 52px; }
 .journey-move-text { color: #2C3E50; font-size: 0.9rem; line-height: 1.4; }
+
+/* ---- password reset (login forgot mode + reset page) ---- */
+.form-label-row { display: flex; align-items: baseline; justify-content: space-between; }
+.forgot-link {
+    background: none; border: none; padding: 0; cursor: pointer;
+    color: #B7950B; font-size: 0.82rem; font-weight: 600;
+}
+.forgot-link:hover { text-decoration: underline; }
+
+.reset-sent-card {
+    background: #FDF8E8; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px;
+    color: #6b5a1f;
+}
+.reset-sent-card strong { display: block; color: #2C3E50; margin-bottom: 4px; }
+.reset-sent-card p { margin: 0; font-size: 0.9rem; line-height: 1.5; }
+
+.login-card-centered { margin: auto; max-width: 440px; }

@@ -280,11 +280,28 @@ export function useAuth() {
         setAuthState({ user: null, loading: false, error: null });
     }, []);
 
+    // Send a password-reset email. Supabase mails a link back to /reset-password
+    // (this redirect URL must be allow-listed in Supabase Auth -> URL config).
+    const requestPasswordReset = useCallback(async (email: string) => {
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+            redirectTo: `${window.location.origin}/reset-password`,
+        });
+        return { ok: !error, error: error?.message ?? null };
+    }, []);
+
+    // Set a new password for the recovery session established by the email link.
+    const updatePassword = useCallback(async (newPassword: string) => {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        return { ok: !error, error: error?.message ?? null };
+    }, []);
+
     return {
         ...authState,
         signIn,
         signUp,
         signOut,
+        requestPasswordReset,
+        updatePassword,
         isAdmin: authState.user?.role === 'admin',
     };
 }

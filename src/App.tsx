@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { Login } from './components/Login';
+import { ResetPassword } from './components/ResetPassword';
 import { ChatInterface } from './components/ChatInterface';
 import { Navbar } from './components/Navbar';
 import './index.css';
@@ -98,6 +99,7 @@ function App() {
                     path="/login"
                     element={user ? <Navigate to="/" replace /> : <Login />}
                 />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route
                     path="/"
                     element={

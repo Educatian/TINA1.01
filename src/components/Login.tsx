@@ -6,10 +6,14 @@ import { hasSupabaseConfig } from '../lib/supabase';
 export function Login() {
     const navigate = useNavigate();
     const [isSignUp, setIsSignUp] = useState(false);
+    const [isForgot, setIsForgot] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showStory, setShowStory] = useState(false);
-    const { signIn, signUp, loading, error } = useAuth();
+    const [resetSent, setResetSent] = useState(false);
+    const [resetError, setResetError] = useState<string | null>(null);
+    const [resetBusy, setResetBusy] = useState(false);
+    const { signIn, signUp, requestPasswordReset, loading, error } = useAuth();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -20,6 +24,24 @@ export function Login() {
         if (success) {
             navigate('/');
         }
+    };
+
+    const handleForgot = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setResetBusy(true);
+        setResetError(null);
+        const { ok, error: err } = await requestPasswordReset(email);
+        setResetBusy(false);
+        // Don't reveal whether an email exists — always show the same confirmation.
+        if (ok || /rate|limit/i.test(err || '')) setResetSent(true);
+        else setResetError(err);
+    };
+
+    const backToSignIn = () => {
+        setIsForgot(false);
+        setIsSignUp(false);
+        setResetSent(false);
+        setResetError(null);
     };
 
     return (
@@ -104,57 +126,106 @@ export function Login() {
                         width="160"
                         height="160"
                     />
-                    <h2>Welcome back</h2>
-                    <p>Start a guided reflection in just a few minutes.</p>
+                    <h2>{isForgot ? 'Reset your password' : 'Welcome back'}</h2>
+                    <p>
+                        {isForgot
+                            ? "No worries. Enter your email and TINA will send you a link to set a new password."
+                            : 'Start a guided reflection in just a few minutes.'}
+                    </p>
                 </div>
 
-                <form className="login-form" onSubmit={handleSubmit}>
-                    {!hasSupabaseConfig && (
-                        <div className="error-message">
-                            Missing Supabase environment variables. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to your local `.env.local` file.
+                {isForgot ? (
+                    resetSent ? (
+                        <div className="login-form">
+                            <div className="reset-sent-card">
+                                <strong>Check your email</strong>
+                                <p>If an account exists for <em>{email}</em>, a reset link is on its way. It expires in about an hour.</p>
+                            </div>
+                            <button type="button" className="btn btn-secondary" onClick={backToSignIn}>Back to sign in</button>
                         </div>
-                    )}
+                    ) : (
+                        <form className="login-form" onSubmit={handleForgot}>
+                            {!hasSupabaseConfig && (
+                                <div className="error-message">
+                                    Missing Supabase environment variables. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to your local `.env.local` file.
+                                </div>
+                            )}
+                            {resetError && <div className="error-message">{resetError}</div>}
+                            <div className="form-group">
+                                <label htmlFor="email">Email</label>
+                                <input
+                                    id="email"
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    placeholder="your@email.com"
+                                    autoComplete="email"
+                                    required
+                                />
+                            </div>
+                            <button type="submit" className="btn btn-primary" disabled={resetBusy || !hasSupabaseConfig}>
+                                {resetBusy ? 'Sending…' : 'Send reset link'}
+                            </button>
+                        </form>
+                    )
+                ) : (
+                    <form className="login-form" onSubmit={handleSubmit}>
+                        {!hasSupabaseConfig && (
+                            <div className="error-message">
+                                Missing Supabase environment variables. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to your local `.env.local` file.
+                            </div>
+                        )}
 
-                    {error && <div className="error-message">{error}</div>}
+                        {error && <div className="error-message">{error}</div>}
 
-                    <div className="form-group">
-                        <label htmlFor="email">Email</label>
-                        <input
-                            id="email"
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="your@email.com"
-                            autoComplete="email"
-                            required
-                        />
-                    </div>
+                        <div className="form-group">
+                            <label htmlFor="email">Email</label>
+                            <input
+                                id="email"
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="your@email.com"
+                                autoComplete="email"
+                                required
+                            />
+                        </div>
 
-                    <div className="form-group">
-                        <label htmlFor="password">Password</label>
-                        <input
-                            id="password"
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="Enter your password"
-                            autoComplete={isSignUp ? 'new-password' : 'current-password'}
-                            required
-                            minLength={6}
-                        />
-                    </div>
+                        <div className="form-group">
+                            <div className="form-label-row">
+                                <label htmlFor="password">Password</label>
+                                {!isSignUp && (
+                                    <button type="button" className="forgot-link" onClick={() => { setIsForgot(true); setResetSent(false); setResetError(null); }}>
+                                        Forgot password?
+                                    </button>
+                                )}
+                            </div>
+                            <input
+                                id="password"
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="Enter your password"
+                                autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                                required
+                                minLength={6}
+                            />
+                        </div>
 
-                    <button
-                        type="submit"
-                        className="btn btn-primary"
-                        disabled={loading || !hasSupabaseConfig}
-                    >
-                        {loading ? 'Loading…' : (isSignUp ? 'Sign Up' : 'Sign In')}
-                    </button>
-                </form>
+                        <button
+                            type="submit"
+                            className="btn btn-primary"
+                            disabled={loading || !hasSupabaseConfig}
+                        >
+                            {loading ? 'Loading…' : (isSignUp ? 'Sign Up' : 'Sign In')}
+                        </button>
+                    </form>
+                )}
 
                 <div className="login-toggle">
-                    {isSignUp ? (
+                    {isForgot ? (
+                        <button type="button" onClick={backToSignIn}>Back to sign in</button>
+                    ) : isSignUp ? (
                         <>
                             Already have an account?{' '}
                             <button type="button" onClick={() => setIsSignUp(false)}>Sign In</button>
