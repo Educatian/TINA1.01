@@ -59,17 +59,103 @@ function extractDelta(chunk: any): string {
     return parts.map((p: any) => p?.text || '').join('');
 }
 
+// ---------------------------------------------------------------------------
+// DEMO MODE — when no Gemini key is configured, TINA still runs end-to-end so
+// the public demo is instantly playable (no setup). The coaching engine already
+// drives the flow deterministically; here we just render each move as a real
+// reflective question. Set the GEMINI_API_KEY secret to switch to live Gemini.
+// ---------------------------------------------------------------------------
+const DEMO_BY_MOVE: Record<string, string> = {
+    ELICIT_EXPERIENCE: "Let's start with something real. Can you think of one recent moment in your teaching where AI came up — a lesson you planned, work you graded, or a choice you weren't quite sure about?",
+    LOOK_BACK: "Thank you for sharing that. As you look back on that moment, what were you actually hoping would happen?",
+    NAME_ESSENTIAL: "It sounds like something that matters to you is sitting underneath this. Would you say it touches a value you hold as a teacher — maybe fairness, care, or honesty?",
+    DEEPEN_REFLECTION: "Let's stay with that for a moment. Why does that matter to you — what would be at stake if it went the other way?",
+    SCAFFOLD_WITH_STEM: "Try finishing this in your own words: \"What made that moment matter to me was ___.\" What comes up?",
+    REFRAME_PERSPECTIVE: "If one of your students described this same moment, how do you think they would see it?",
+    CONNECT_VALUE_TO_ACTION: "Here is a small one: what is one concrete thing you could try in your next class that honors that value?",
+    AFFIRM_AND_HOLD: "That is completely understandable, and it is okay to feel unsure here. Take a breath — what feels most on your mind right now?",
+};
+
+const DEMO_GREETING = "Hello! I'm TINA, your reflective learning companion. I'm here to help you pause and notice your teaching values and how AI fits into your practice. Think of this as a quiet moment for yourself. Shall we start with what's been on your mind lately about AI in your teaching?";
+
+const DEMO_REPORT = [
+    "**TINA Reflection Report (10-minute Consultation)**",
+    "",
+    "**1) What Stood Out In Your Reflection**",
+    "- Main pattern noticed: you kept returning to how AI fits with what you most value as a teacher.",
+    "- Strengths that are emerging: an honest, questioning stance toward your own practice.",
+    "- Tensions or open questions: balancing the convenience of AI with the kind of teacher you want to be.",
+    "",
+    "**2) Values Guiding You Right Now**",
+    "- Care: you weigh how choices land on your students.",
+    "- Honesty: you notice when something feels off and name it.",
+    "- Growth: you treat uncertainty as a place to learn, not a verdict.",
+    "",
+    "**3) Your Current AI Approach**",
+    "- Main Purpose: support for planning and routine tasks.",
+    "- Control Level: you stay in the loop and review what AI produces.",
+    "- Routines to Strengthen: making your own reasoning visible before you reach for a tool.",
+    "",
+    "**4) Practicum And Learner Impact**",
+    "- Transparency: thinking about how you'd explain your AI use to a colleague or parent.",
+    "- Fairness/Gap: noticing who has access and who does not.",
+    "",
+    "**5) Integrated Insight**",
+    "Your sense of yourself as a teacher is quietly steering your AI choices. When a tool saves time, you still ask whether it serves your students and reflects your values — and that question is itself the work of a thoughtful professional.",
+    "",
+    "**6) Questions To Carry Forward**",
+    "Q1: When AI gives an answer, who decides if it's right — you, the student, or the tool?",
+    "Q2: How do I make effort and thinking visible when AI can produce instant results?",
+    "Q3: Whose knowledge and perspective does the AI represent?",
+    "",
+    "**7) One Next Move**",
+    "In your next class or planning task, try one small step where you show your own reasoning first, then use AI only to check or extend it.",
+    "",
+    "_(Demo mode: TINA is running without a connected AI model. Set the instance's Gemini key for fully personalized responses.)_",
+].join("\n");
+
+function demoReplyText(contents: { role: string; parts: { text: string }[] }[]): string {
+    const lastUser = [...contents].reverse().find((c) => c.role === 'user');
+    const text = lastUser?.parts?.[0]?.text || '';
+    if (/start the session/i.test(text) && !/COACHING MOVE/.test(text)) return DEMO_GREETING;
+    const m = /COACHING MOVE = ([A-Z_]+)/.exec(text);
+    const move = m ? m[1] : null;
+    if (move === 'CLOSE_SYNTHESIS') return DEMO_REPORT;
+    if (move && DEMO_BY_MOVE[move]) return DEMO_BY_MOVE[move];
+    return "Thank you for sharing that. What feels most important to you about it?";
+}
+
+function streamText(text: string): Response {
+    const encoder = new TextEncoder();
+    // Emit in small word-chunks so the client's typing effect still animates.
+    const words = text.split(/(\s+)/);
+    let i = 0;
+    const readable = new ReadableStream({
+        pull(controller) {
+            if (i >= words.length) { controller.close(); return; }
+            controller.enqueue(encoder.encode(words[i++]));
+        },
+    });
+    return new Response(readable, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
+}
+
 export async function handleAi(body: any, env: Env): Promise<Response> {
     const GEMINI_KEY = env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || '';
     const HF_KEY = env.HF_API_KEY || env.VITE_HUGGINGFACE_API_KEY || '';
     const kind = String(body?.kind || '');
 
     if (kind === 'gemini-chat' || kind === 'gemini-json') {
-        if (!GEMINI_KEY) return json(503, { error: 'gemini_key_not_configured' });
         const model = String(body?.model || 'gemini-2.5-flash');
         if (!ALLOWED_GEMINI_MODELS.has(model)) return json(400, { error: 'model_not_allowed' });
         const contents = sanitizeContents(body?.contents);
         if (!contents || contents.length === 0) return json(400, { error: 'invalid_contents' });
+
+        // No key -> demo mode for chat (instant playability); JSON extraction
+        // stays a no-op so the research pipeline simply skips.
+        if (!GEMINI_KEY) {
+            if (kind === 'gemini-chat') return streamText(demoReplyText(contents));
+            return json(503, { error: 'gemini_key_not_configured' });
+        }
 
         const payload: any = { contents };
         if (kind === 'gemini-chat' && typeof body?.systemInstruction === 'string') {
