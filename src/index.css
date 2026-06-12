@@ -3368,3 +3368,89 @@ body {
 
 .chat-meta-row .progress-container { flex: 1; }
 .chat-meta-row .onboarding-replay-btn { flex-shrink: 0; margin-top: 2px; }
+
+/* ============================================================================
+   Login hero — cartoon TINA campus video loop + story overlay
+   ========================================================================== */
+
+.landing-hero { position: relative; overflow: hidden; }
+
+.hero-bg-video,
+.hero-bg-fallback {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 0;
+}
+.hero-bg-fallback { display: none; }
+
+/* Soft warm wash so the hero text stays readable over the video */
+.hero-bg-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(135deg, rgba(255, 254, 247, 0.86) 0%, rgba(252, 243, 207, 0.78) 100%);
+}
+
+.landing-hero .landing-content { position: relative; z-index: 2; }
+
+.hero-story-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 22px;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #F4D03F 0%, #F39C12 100%);
+    color: #2C3E50;
+    font-weight: 700;
+    font-size: 0.95rem;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(243, 156, 18, 0.3);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.hero-story-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(243, 156, 18, 0.4); }
+.hero-story-btn svg { flex-shrink: 0; }
+
+.story-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(44, 62, 80, 0.7);
+    backdrop-filter: blur(4px);
+}
+.story-modal {
+    position: relative;
+    width: min(900px, 100%);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+}
+.story-video { display: block; width: 100%; height: auto; background: #000; }
+.story-close {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 2;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-bg-video { display: none; }
+    .hero-bg-fallback { display: block; }
+}
