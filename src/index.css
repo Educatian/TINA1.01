@@ -3593,3 +3593,26 @@ body {
     /* browsers that honor it will pause; the poster frame still shows */
     .tina-idle-video { }
 }
+
+/* ---- instructor feedback ---- */
+.report-feedback-card { margin: 22px 0; padding: 18px 20px; background: #F4FAF7; border-radius: 14px; }
+.report-feedback-card h3 { margin: 0 0 6px; color: #2C3E50; font-size: 1.05rem; }
+.feedback-note-input {
+    width: 100%; box-sizing: border-box; margin: 10px 0; padding: 10px 12px;
+    border: 1.5px solid #d8e6df; border-radius: 10px; font-family: inherit; font-size: 0.9rem; resize: vertical;
+}
+.feedback-note-input:focus { outline: none; border-color: #52796F; }
+.session-feedback { margin-top: 12px; padding: 14px 16px; border-radius: 12px; font-size: 0.9rem; line-height: 1.5; }
+.session-feedback-answered { background: #F4FAF7; border-left: 4px solid #52796F; color: #2C3E50; }
+.session-feedback-answered strong { display: block; color: #52796F; margin-bottom: 4px; }
+.session-feedback-pending { background: #FDF8E8; border-left: 4px solid #F4D03F; color: #6b5a1f; }
+
+/* ---- learner coverage / insight ---- */
+.coverage-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.coverage-label { flex: 0 0 46%; font-size: 0.86rem; color: #2C3E50; }
+.coverage-track { flex: 1; height: 12px; background: #F1EEE0; border-radius: 6px; overflow: hidden; }
+.coverage-fill { height: 100%; background: linear-gradient(90deg, #F4D03F, #F39C12); border-radius: 6px; transition: width 0.4s ease; }
+.coverage-fill.coverage-empty { background: #E8DCC0; }
+.coverage-count { flex: 0 0 28px; text-align: right; font-size: 0.8rem; color: #9ca3af; }
+.insight-nudge { margin: 6px 0 18px; padding: 12px 16px; background: #FDF8E8; border-radius: 12px; font-size: 0.9rem; line-height: 1.5; color: #6b5a1f; }
+.insight-nudge strong { color: #2C3E50; }

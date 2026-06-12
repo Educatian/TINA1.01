@@ -8,6 +8,7 @@ import {
     type DepthBand,
 } from '../services/reflectionLoop';
 import { saveJol } from '../services/analyticsService';
+import { requestInstructorFeedback } from '../services/feedbackService';
 import { TinaAvatar } from './TinaAvatar';
 
 const JOL_OPTIONS: { band: DepthBand; label: string; hint: string }[] = [
@@ -77,6 +78,8 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
     // JOL gate: ask the learner how deep they FELT they went BEFORE revealing
     // the summary, so the self-rating is not anchored by what TINA reflects back.
     const [jolRating, setJolRating] = useState<DepthBand | null>(null);
+    const [feedbackNote, setFeedbackNote] = useState('');
+    const [feedbackState, setFeedbackState] = useState<'idle' | 'sending' | 'sent'>('idle');
 
     useEffect(() => {
         let cancelled = false;
@@ -431,6 +434,44 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                             <h3 style={{ color: clusterInfo.color }}>{clusterInfo.title}</h3>
                             <p>{clusterInfo.description}</p>
                             <p className="report-lens-note">Use this as a light interpretive lens, not a grade or fixed label.</p>
+                        </div>
+                    )}
+
+                    {reportRevealed && (
+                        <div className="report-feedback-card">
+                            {feedbackState === 'sent' ? (
+                                <p className="carry-saved">Sent. Your instructor will leave feedback in My Account.</p>
+                            ) : (
+                                <>
+                                    <h3>Want a second perspective?</h3>
+                                    <p className="report-trajectory-note">
+                                        Ask your instructor for written feedback on this reflection. It will appear in My Account.
+                                    </p>
+                                    <textarea
+                                        className="feedback-note-input"
+                                        placeholder="Optional: anything you'd like them to focus on?"
+                                        value={feedbackNote}
+                                        onChange={(e) => setFeedbackNote(e.target.value)}
+                                        rows={2}
+                                    />
+                                    <button
+                                        className="btn btn-secondary"
+                                        disabled={feedbackState === 'sending'}
+                                        onClick={async () => {
+                                            setFeedbackState('sending');
+                                            const ok = await requestInstructorFeedback({
+                                                sessionId: session.id,
+                                                userId: session.user_id,
+                                                activityId: session.activity_id ?? null,
+                                                note: feedbackNote,
+                                            });
+                                            setFeedbackState(ok ? 'sent' : 'idle');
+                                        }}
+                                    >
+                                        {feedbackState === 'sending' ? 'Sending…' : 'Ask instructor for feedback'}
+                                    </button>
+                                </>
+                            )}
                         </div>
                     )}
 

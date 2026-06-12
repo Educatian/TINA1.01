@@ -6,6 +6,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { getUserSessions } from '../hooks/useSession';
 import { ReflectionJourney } from './ReflectionJourney';
+import { LearnerInsights } from './LearnerInsights';
+import { getUserFeedback, requestInstructorFeedback, type SessionFeedback } from '../services/feedbackService';
 import type { Message, Session } from '../types';
 
 export function MyAccount() {
@@ -15,6 +17,8 @@ export function MyAccount() {
     const [loading, setLoading] = useState(true);
     const [selectedSession, setSelectedSession] = useState<Session | null>(null);
     const [viewingChat, setViewingChat] = useState<Session | null>(null);
+    const [feedbackBySession, setFeedbackBySession] = useState<Record<string, SessionFeedback>>({});
+    const [requestingId, setRequestingId] = useState<string | null>(null);
     const chatViewRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -28,6 +32,27 @@ export function MyAccount() {
         const data = await getUserSessions(user.id);
         setSessions(data);
         setLoading(false);
+        const feedback = await getUserFeedback(user.id);
+        const map: Record<string, SessionFeedback> = {};
+        feedback.forEach((f) => { map[f.session_id] = f; });
+        setFeedbackBySession(map);
+    };
+
+    const handleRequestFeedback = async (session: Session) => {
+        if (!user) return;
+        setRequestingId(session.id);
+        const ok = await requestInstructorFeedback({
+            sessionId: session.id,
+            userId: user.id,
+            activityId: session.activity_id ?? null,
+        });
+        setRequestingId(null);
+        if (ok) {
+            setFeedbackBySession((prev) => ({
+                ...prev,
+                [session.id]: { ...(prev[session.id] || {} as SessionFeedback), session_id: session.id, user_id: user.id, requested: true, status: 'requested' },
+            }));
+        }
     };
 
     const getMessages = (session: Session): Message[] => {
@@ -242,6 +267,7 @@ export function MyAccount() {
             )}
 
             {!loading && <ReflectionJourney sessions={sessions} />}
+            {!loading && user && <LearnerInsights userId={user.id} />}
 
             <div className="account-section">
                 <h2>My Reflection Sessions</h2>
@@ -294,7 +320,27 @@ export function MyAccount() {
                                     >
                                         {selectedSession?.id === session.id ? 'Hide Preview' : 'Preview'}
                                     </button>
+                                    {session.completed_at && !feedbackBySession[session.id]?.requested && !feedbackBySession[session.id]?.feedback_text && (
+                                        <button
+                                            className="btn btn-secondary"
+                                            disabled={requestingId === session.id}
+                                            onClick={() => handleRequestFeedback(session)}
+                                        >
+                                            {requestingId === session.id ? 'Requesting…' : 'Ask instructor for feedback'}
+                                        </button>
+                                    )}
                                 </div>
+
+                                {feedbackBySession[session.id]?.feedback_text ? (
+                                    <div className="session-feedback session-feedback-answered">
+                                        <strong>Instructor feedback</strong>
+                                        <p>{feedbackBySession[session.id]?.feedback_text}</p>
+                                    </div>
+                                ) : feedbackBySession[session.id]?.requested ? (
+                                    <div className="session-feedback session-feedback-pending">
+                                        Feedback requested, your instructor will reply here.
+                                    </div>
+                                ) : null}
 
                                 {selectedSession?.id === session.id && (
                                     <div className="session-preview">

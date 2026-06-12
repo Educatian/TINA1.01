@@ -6,6 +6,7 @@ import { getActivityOutputs, getAllSessions } from '../hooks/useSession';
 import { useAuth } from '../hooks/useAuth';
 import { assignLearnerToActivity, defaultActivityConfig, deleteInstructorActivity, listActivityEnrollments, listInstructorActivities, removeLearnerFromActivity, saveInstructorActivity, setActiveActivityRecord, setActivityPublished } from '../services/activityConfig';
 import { setRolePreview } from '../services/rolePreview';
+import { listFeedbackRequests, saveInstructorFeedback, type SessionFeedback } from '../services/feedbackService';
 import { ActivityConfigForm } from './ActivityConfigForm';
 import type { ActivityConfig, ActivityEnrollment, ActivityRecord, Session, SessionOutput } from '../types';
 
@@ -97,7 +98,7 @@ interface HumanCodingRecord {
   created_at: string;
   updated_at: string;
 }
-type DashboardTab = 'activity' | 'overview' | 'analytics' | 'research' | 'moves' | 'review' | 'coding' | 'users';
+type DashboardTab = 'activity' | 'overview' | 'analytics' | 'research' | 'moves' | 'review' | 'coding' | 'feedback' | 'users';
 
 export function AdminDashboard() {
   const navigate = useNavigate();
@@ -124,6 +125,9 @@ export function AdminDashboard() {
   const [humanCodingRecords, setHumanCodingRecords] = useState<HumanCodingRecord[]>([]);
   const [coachingTurns, setCoachingTurns] = useState<CoachingTurnRecord[]>([]);
   const [coachingTelemetryEnabled, setCoachingTelemetryEnabled] = useState(true);
+  const [feedbackRequests, setFeedbackRequests] = useState<SessionFeedback[]>([]);
+  const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
+  const [feedbackSavingId, setFeedbackSavingId] = useState<string | null>(null);
   const [selectedMoveLearnerId, setSelectedMoveLearnerId] = useState<string | null>(null);
   const [selectedResearchSignalId, setSelectedResearchSignalId] = useState<string | null>(null);
   const [selectedCodingSignalId, setSelectedCodingSignalId] = useState<string | null>(null);
@@ -210,6 +214,21 @@ export function AdminDashboard() {
     } else {
       setCoachingTelemetryEnabled(false);
       console.warn('Coaching turns not available:', coachingResult.reason);
+    }
+
+    // Instructor feedback requests (feature-detected; empty if table absent).
+    try { setFeedbackRequests(await listFeedbackRequests()); } catch { /* ignore */ }
+  };
+
+  const handleSaveFeedback = async (sessionId: string) => {
+    const text = (feedbackDrafts[sessionId] || '').trim();
+    if (!text || !user) return;
+    setFeedbackSavingId(sessionId);
+    const ok = await saveInstructorFeedback({ sessionId, instructorId: user.id, text });
+    setFeedbackSavingId(null);
+    if (ok) {
+      setFeedbackRequests((prev) => prev.map((f) => f.session_id === sessionId
+        ? { ...f, feedback_text: text, status: 'answered', instructor_id: user.id } : f));
     }
   };
 
@@ -733,8 +752,12 @@ export function AdminDashboard() {
     { id: 'moves', label: 'Coaching Moves' },
     { id: 'review', label: 'Review Queue' },
     { id: 'coding', label: 'Human Coding' },
+    { id: 'feedback', label: 'Feedback' },
     { id: 'users', label: 'User Management' },
   ];
+
+  const feedbackOpen = feedbackRequests.filter((f) => f.requested && !f.feedback_text);
+  const feedbackAnswered = feedbackRequests.filter((f) => f.feedback_text);
 
   return (
     <div className="admin-container">
@@ -1464,6 +1487,62 @@ export function AdminDashboard() {
               )}
             </section>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'feedback' && (
+        <div className="admin-page-shell">
+          <div className="admin-header admin-header-tight">
+            <h1 className="dashboard-page-title">Learner Feedback</h1>
+            <p className="dashboard-page-copy">Learners can request written feedback on a reflection. Answers appear in their My Account. (Requires <code>tina-instructor-feedback.sql</code>; scoped to activities you own.)</p>
+          </div>
+          <div className="stats-grid stats-grid-compact">
+            <div className="stat-card stat-card-compact"><h3>Open Requests</h3><div className="value">{feedbackOpen.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Answered</h3><div className="value">{feedbackAnswered.length}</div></div>
+          </div>
+
+          {feedbackRequests.length === 0 ? (
+            <p className="activity-support-copy">No feedback requests yet. When a learner asks for feedback on a reflection, it appears here.</p>
+          ) : (
+            <>
+              <h3 className="journey-h3" style={{ marginTop: 18 }}>Open requests</h3>
+              {feedbackOpen.length === 0 ? <p className="activity-support-copy">All caught up.</p> : feedbackOpen.map((f) => (
+                <section key={f.session_id} className="dashboard-panel" style={{ marginBottom: 14 }}>
+                  <div className="dashboard-panel-header">
+                    <h3 className="dashboard-panel-title">Session {f.session_id.slice(0, 8)}…</h3>
+                    <span className="dashboard-panel-meta">{users.find((u) => u.id === f.user_id)?.email || f.user_id.slice(0, 8)}</span>
+                  </div>
+                  {f.request_note && <p className="report-trajectory-note">Learner asked: “{f.request_note}”</p>}
+                  <textarea
+                    className="feedback-note-input"
+                    rows={3}
+                    placeholder="Write supportive, specific feedback on this reflection…"
+                    value={feedbackDrafts[f.session_id] ?? ''}
+                    onChange={(e) => setFeedbackDrafts((prev) => ({ ...prev, [f.session_id]: e.target.value }))}
+                  />
+                  <button
+                    className="btn btn-primary table-action-button"
+                    disabled={feedbackSavingId === f.session_id || !(feedbackDrafts[f.session_id] || '').trim()}
+                    onClick={() => handleSaveFeedback(f.session_id)}
+                  >
+                    {feedbackSavingId === f.session_id ? 'Sending…' : 'Send feedback'}
+                  </button>
+                </section>
+              ))}
+
+              {feedbackAnswered.length > 0 && (
+                <>
+                  <h3 className="journey-h3" style={{ marginTop: 22 }}>Answered</h3>
+                  {feedbackAnswered.map((f) => (
+                    <div key={f.session_id} className="session-feedback session-feedback-answered" style={{ marginBottom: 10 }}>
+                      <strong>{users.find((u) => u.id === f.user_id)?.email || f.user_id.slice(0, 8)} · {f.session_id.slice(0, 8)}…</strong>
+                      <p>{f.feedback_text}</p>
+                    </div>
+                  ))}
+                </>
+              )}
+            </>
+          )}
         </div>
       )}
 
