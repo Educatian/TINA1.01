@@ -8,6 +8,7 @@ export function Login() {
     const [isSignUp, setIsSignUp] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showStory, setShowStory] = useState(false);
     const { signIn, signUp, loading, error } = useAuth();
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -24,6 +25,22 @@ export function Login() {
     return (
         <div className="login-container">
             <div className="landing-hero">
+                {/* Cartoon TINA campus loop behind the hero. Muted autoplay loop;
+                    a static keyframe replaces it under prefers-reduced-motion. */}
+                <video
+                    className="hero-bg-video"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    poster="/video/tina-campus-keyframe.png"
+                    aria-hidden="true"
+                >
+                    <source src="/video/tina-campus-thinking.mp4" type="video/mp4" />
+                </video>
+                <img className="hero-bg-fallback" src="/video/tina-campus-keyframe.png" alt="" aria-hidden="true" />
+                <div className="hero-bg-overlay" aria-hidden="true" />
+
                 <div className="landing-content">
                     <div className="landing-badge">AI-Guided Reflection</div>
                     <h1 className="landing-title">TINA</h1>
@@ -32,6 +49,13 @@ export function Login() {
                         A short guided conversation for preservice and practicing teachers to reflect on values,
                         AI use, and what to try next.
                     </p>
+
+                    <button type="button" className="hero-story-btn" onClick={() => setShowStory(true)}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M8 5v14l11-7z" />
+                        </svg>
+                        Watch TINA&apos;s story
+                    </button>
 
                     <div className="landing-features">
                         <div className="feature-item">
@@ -143,6 +167,22 @@ export function Login() {
                     )}
                 </div>
             </div>
+
+            {showStory && (
+                <div className="story-overlay" onClick={() => setShowStory(false)}>
+                    <div className="story-modal" onClick={(e) => e.stopPropagation()}>
+                        <button className="story-close" onClick={() => setShowStory(false)} aria-label="Close video">×</button>
+                        <video
+                            className="story-video"
+                            src="/video/tina-story-narrated.mp4"
+                            poster="/video/tina-campus-keyframe.png"
+                            controls
+                            autoPlay
+                            playsInline
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -3,9 +3,24 @@ import {
     extractCarryQuestions,
     getCoachingTurnsForSession,
     saveCarryForward,
+    computeJol,
     type TrajectoryPoint,
+    type DepthBand,
 } from '../services/reflectionLoop';
+import { saveJol } from '../services/analyticsService';
 import { TinaAvatar } from './TinaAvatar';
+
+const JOL_OPTIONS: { band: DepthBand; label: string; hint: string }[] = [
+    { band: 1, label: 'Mostly described what happened', hint: 'I shared the situation' },
+    { band: 2, label: 'Started examining why', hint: 'I touched on the reasons' },
+    { band: 3, label: 'Really dug into the why', hint: 'I questioned my values and assumptions' },
+];
+
+const BAND_LABEL: Record<DepthBand, string> = {
+    1: 'mostly describing',
+    2: 'starting to examine why',
+    3: 'examining the why',
+};
 import type { Session, TeacherCluster } from '../types';
 
 const LEVEL_HEIGHT: Record<TrajectoryPoint['reflectionLevel'], number> = {
@@ -59,6 +74,9 @@ interface ReportModalProps {
 export function ReportModal({ session, onClose, onNewSession }: ReportModalProps) {
     const [trajectory, setTrajectory] = useState<TrajectoryPoint[]>([]);
     const [carriedQuestion, setCarriedQuestion] = useState<string | null>(null);
+    // JOL gate: ask the learner how deep they FELT they went BEFORE revealing
+    // the summary, so the self-rating is not anchored by what TINA reflects back.
+    const [jolRating, setJolRating] = useState<DepthBand | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -67,6 +85,22 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
         });
         return () => { cancelled = true; };
     }, [session.id]);
+
+    const jol = jolRating ? computeJol(jolRating, trajectory) : null;
+    // The gate only makes sense when we have measurable depth (treatment arm).
+    const jolApplicable = trajectory.length >= 3;
+    const reportRevealed = !jolApplicable || jolRating !== null;
+
+    const handleJolSelect = (band: DepthBand) => {
+        setJolRating(band);
+        const result = computeJol(band, trajectory);
+        void saveJol(session.id, {
+            rating: result.selfRating,
+            measuredBand: result.measuredBand,
+            measuredScore: result.measuredScore,
+            gap: result.gap,
+        });
+    };
 
     const carryQuestions = extractCarryQuestions(session.summary_report);
 
@@ -286,6 +320,40 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                         Use this as a coaching debrief. It is meant to help you notice what stood out and decide what to try next.
                     </div>
 
+                    {jolApplicable && jolRating === null && (
+                        <div className="report-jol-gate">
+                            <h3>Before your summary, a quick check</h3>
+                            <p className="report-trajectory-note">
+                                How deeply do you feel you reflected today? There is no right answer, this is
+                                just for you to notice.
+                            </p>
+                            <div className="jol-options">
+                                {JOL_OPTIONS.map((opt) => (
+                                    <button key={opt.band} className="jol-option" onClick={() => handleJolSelect(opt.band)}>
+                                        <strong>{opt.label}</strong>
+                                        <span>{opt.hint}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {reportRevealed && jol && (
+                        <div className={`report-jol-card jol-gap-${Math.abs(jol.gap) <= 0 ? 'aligned' : jol.gap > 0 ? 'over' : 'under'}`}>
+                            <h3>How that felt vs what it showed</h3>
+                            <p className="report-trajectory-note">
+                                You felt today was <strong>{BAND_LABEL[jol.selfRating]}</strong>, and your turns
+                                showed <strong>{BAND_LABEL[jol.measuredBand]}</strong>.{' '}
+                                {jol.gap === 0
+                                    ? 'Your sense of your own reflection lined up well, that self-awareness is itself a strength.'
+                                    : jol.gap > 0
+                                        ? 'You felt a little deeper than the conversation showed, which is worth noticing, there may be more to put into words next time.'
+                                        : 'You went deeper than you gave yourself credit for, do not undersell that.'}
+                            </p>
+                        </div>
+                    )}
+
+                    {reportRevealed && (
                     <div className="report-body">
                         {sections ? (
                             sections.map((section, idx) => (
@@ -301,8 +369,9 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                             </div>
                         )}
                     </div>
+                    )}
 
-                    {trajectory.length >= 3 && (
+                    {reportRevealed && trajectory.length >= 3 && (
                         <div className="report-trajectory">
                             <h3>Your Reflection Depth, Turn by Turn</h3>
                             <p className="report-trajectory-note">
@@ -327,7 +396,7 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                         </div>
                     )}
 
-                    {carryQuestions.length > 0 && (
+                    {reportRevealed && carryQuestions.length > 0 && (
                         <div className="report-carry">
                             <h3>Carry One Question Forward</h3>
                             {carriedQuestion ? (
@@ -356,7 +425,7 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                         </div>
                     )}
 
-                    {clusterInfo && (
+                    {reportRevealed && clusterInfo && (
                         <div className="report-lens-card">
                             <p className="report-lens-label">Optional reflection lens</p>
                             <h3 style={{ color: clusterInfo.color }}>{clusterInfo.title}</h3>
