@@ -37,7 +37,8 @@ const TABLES: Record<string, TablePolicy> = {
         cols: [...ID, 'user_id', 'activity_id', 'messages', 'summary_report', 'layer1_keywords', 'layer2_keywords',
             'layer3_keywords', 'teacher_cluster', 'cluster_scores', 'turn_count', 'completed_at',
             'session_duration_seconds', 'completion_status', 'pdf_downloaded', 'voice_input_used',
-            'session_resumed', 'avg_response_length', 'analytics_data'],
+            'session_resumed', 'avg_response_length', 'analytics_data',
+            'jol_rating', 'jol_measured_band', 'jol_measured_score', 'jol_gap', 'jol_recorded_at'],
     },
     session_outputs: { owner: 'user_id', json: [], cols: [...ID, 'session_id', 'activity_id', 'user_id', 'output_format', 'output_text', 'submitted_at'] },
     session_analytics: {

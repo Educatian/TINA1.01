@@ -79,7 +79,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   voice_input_used         INTEGER,
   session_resumed          INTEGER,
   avg_response_length      INTEGER,
-  analytics_data           TEXT    -- JSON
+  analytics_data           TEXT,    -- JSON
+  jol_rating               INTEGER, -- JOL self-rating: 1 brief | 2 describing | 3 examining-why
+  jol_measured_band        INTEGER, -- measured depth band (from coaching_turns)
+  jol_measured_score       REAL,    -- 0..1 weighted depth
+  jol_gap                  INTEGER, -- jol_rating - jol_measured_band
+  jol_recorded_at          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_activity ON sessions(activity_id);
