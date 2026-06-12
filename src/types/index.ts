@@ -11,6 +11,16 @@ export interface Message {
   role: 'user' | 'model';
   text: string;
   timestamp?: string;
+  /** 1-based learner turn this message belongs to — join key to coaching_turns/discourse_turns. */
+  turnIndex?: number;
+  /** How a user message was produced. Absent on model messages and legacy rows (treat as 'typed'). */
+  source?: 'typed' | 'voice' | 'quick_reply';
+  /** Set when source === 'quick_reply': which scripted question/option the learner clicked. */
+  quickReply?: {
+    questionId: string;
+    optionId: string;
+    questionText: string;
+  };
 }
 
 export type ActivityGoal =

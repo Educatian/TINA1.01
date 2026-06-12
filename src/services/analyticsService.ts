@@ -332,6 +332,39 @@ export async function saveCoachingTurn(log: CoachingTurnLog): Promise<void> {
 }
 
 // ============================================================================
+// DISCOURSE TURN PAIRS (utterance-level log for discourse analysis)
+// One row per learner turn: the AI utterance that prompted it, the learner's
+// response with provenance (typed / voice / clicked quick-reply option+id),
+// and the AI reply. Joins to coaching_turns on (session_id, turn_index).
+// Logged regardless of the coaching-engine arm so the CONTROL transcript is
+// equally analyzable. Best-effort + feature-detected: apply tina-discourse.sql
+// in Supabase to enable; until then this no-ops and chat is unaffected.
+// ============================================================================
+
+let discourseLogDisabled = false;
+
+export async function saveDiscourseTurn(row: import('./discourseLog').DiscourseTurnRow): Promise<void> {
+    if (discourseLogDisabled) return;
+
+    try {
+        const { error } = await supabase
+            .from('discourse_turns')
+            .upsert(row, { onConflict: 'session_id,turn_index' });
+
+        if (error) {
+            if (isMissingSchemaError(error)) {
+                discourseLogDisabled = true;
+                console.info('[discourse] discourse_turns table not found — pair logging disabled (apply tina-discourse.sql to enable). Chat is unaffected.');
+            } else {
+                console.warn('Failed to save discourse turn (non-blocking):', error);
+            }
+        }
+    } catch (e) {
+        console.warn('Discourse turn logging threw (non-blocking):', e);
+    }
+}
+
+// ============================================================================
 // EXPERIMENT ASSIGNMENT LOG (coaching-engine A/B condition, per session)
 // Best-effort + feature-detected, mirroring saveCoachingTurn. Records which arm
 // the learner was in so the CONTROL arm (which writes no coaching_turns) is

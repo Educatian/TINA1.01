@@ -262,7 +262,9 @@ Security notes:
   `tina-artifact-anchor.sql` (persist the reflection artifact across resume),
   `tina-jol.sql` (judgment-of-learning), `tina-instructor-feedback.sql`,
   `tina-experiment.sql` (RCT arm), `tina-session-delete.sql` (lets learners
-  bulk-delete their own sessions from My Account). All additive, idempotent,
+  bulk-delete their own sessions from My Account), `tina-discourse.sql`
+  (utterance-level discourse pairs: AI prompt -> learner response with
+  typed/voice/quick-reply-click provenance -> AI reply, per turn). All additive, idempotent,
   RLS-scoped; the app feature-detects any that are unapplied and falls back
   gracefully.
 

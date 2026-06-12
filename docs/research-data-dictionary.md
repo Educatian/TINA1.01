@@ -125,6 +125,31 @@ Sentiment (`sentiment_score`, `sentiment_label`), `arousal_level`, `valence`,
 
 ---
 
+## 4b. Discourse turn pairs (both arms)
+
+### Table: `discourse_turns` (one row per learner turn) — `tina-discourse.sql`
+
+The utterance-level record for discourse analysis: each learner turn stored as
+the adjacency pair around it, joinable to `coaching_turns` and
+`session_reflection_signals` on (`session_id`, `turn_index`).
+
+| Field | Meaning |
+|---|---|
+| `ai_prompt_text` | the TINA utterance the learner was responding to (null if none preceded) |
+| `user_text` | learner response verbatim |
+| `user_source` | `typed` \| `voice` (mic contributed to the composer draft) \| `quick_reply` (clicked a scripted option) |
+| `qr_question_id`, `qr_option_id`, `qr_question_text` | for clicks: which scripted question/option was chosen (ids from `QuickReply.tsx` question bank) |
+| `ai_response_text` | TINA's reply to this turn |
+| `move` | coaching move that shaped the reply (null on control arm — rows are written on **both** arms) |
+
+The same provenance is embedded per-message inside `sessions.messages` (jsonb:
+`turnIndex`, `source`, `quickReply`), so the full ordered transcript and the
+flat pair table always agree. Caveat: rows exist only for sessions run after
+the migration + deploy; earlier transcripts remain in `sessions.messages`
+without provenance (treat as `typed`).
+
+---
+
 ## 5. Measurement-validity cross-check
 
 The dashboard **Coaching Moves → Classifier Agreement** panel cross-tabulates,

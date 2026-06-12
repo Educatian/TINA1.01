@@ -22,9 +22,11 @@ import {
     saveTurnAnalytics,
     saveSessionAnalytics,
     saveCoachingTurn,
+    saveDiscourseTurn,
     saveExperimentAssignment,
     markVoiceInputUsed
 } from '../services/analyticsService';
+import { buildDiscourseTurn, withProvenance, type UserMessageMeta } from '../services/discourseLog';
 import { assignCondition, type ExperimentAssignment } from '../services/experimentAssignment';
 import {
     runCoachingTurn,
@@ -284,7 +286,10 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const turnCountRef = useRef(0);
     const sessionIdRef = useRef<string | null>(null);
     const quickReplyResponsesRef = useRef<Record<string, string>>({});
-    const queuedMessagesRef = useRef<string[]>([]);
+    const queuedMessagesRef = useRef<{ text: string; meta?: UserMessageMeta }[]>([]);
+    // True when the mic contributed to the current composer draft — marks the
+    // next sent message as voice-sourced for the discourse log, then resets.
+    const composerUsedVoiceRef = useRef(false);
     const presenceChannelRef = useRef<RealtimeChannel | null>(null);
     // Coaching engine: track the ALACT phase across turns + session start wall-clock.
     const alactPhaseRef = useRef<AlactPhase>('action');
@@ -649,6 +654,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     }
                 }
                 if (newTranscript) {
+                    composerUsedVoiceRef.current = true;
                     setInput((prev) => (prev + ' ' + newTranscript).trim());
                 }
             };
@@ -706,11 +712,11 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         setQueuedCount(queuedMessagesRef.current.length);
 
         if (nextMessage) {
-            void processUserMessage(nextMessage);
+            void processUserMessage(nextMessage.text, nextMessage.meta);
         }
     };
 
-    const processUserMessage = async (userText: string) => {
+    const processUserMessage = async (userText: string, meta?: UserMessageMeta) => {
         if (!chatSession) return;
 
         isProcessingRef.current = true;
@@ -718,14 +724,14 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         setCurrentQuickReply(null);
         const priorMessages = messagesRef.current;
 
-        const userMsg: Message = {
+        const newTurnCount = turnCountRef.current + 1;
+        const userMsg: Message = withProvenance({
             role: 'user',
             text: userText,
             timestamp: new Date().toISOString()
-        };
+        }, newTurnCount, meta);
         appendMessages(userMsg);
 
-        const newTurnCount = turnCountRef.current + 1;
         const userResponseTimeMs = getTurnResponseTime();
 
         // --- Coaching-move engine (feature-detected, fully isolated) ---------
@@ -825,10 +831,27 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             const botMsg: Message = {
                 role: 'model',
                 text: response.text || '',
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                turnIndex: newTurnCount
             };
 
             setTurnCountState(newTurnCount);
+
+            // Discourse pair log (AI prompt -> learner response -> AI reply, with
+            // click provenance). Runs on EVERY arm — control transcripts must be
+            // equally analyzable — so it sits outside the coachingPlan branch.
+            if (sessionIdRef.current) {
+                void saveDiscourseTurn(buildDiscourseTurn({
+                    sessionId: sessionIdRef.current,
+                    userId: user.id,
+                    activityId: resolvedActivityId,
+                    turnIndex: newTurnCount,
+                    priorMessages,
+                    userMsg,
+                    aiResponseText: botMsg.text,
+                    move: coachingPlan?.move ?? null,
+                }));
+            }
 
             // Advance the ALACT phase + log the move (best-effort, non-blocking).
             if (coachingPlan) {
@@ -998,17 +1021,17 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         }
     };
 
-    const queueOrSendMessage = (userText: string) => {
+    const queueOrSendMessage = (userText: string, meta?: UserMessageMeta) => {
         const trimmedText = userText.trim();
         if (!trimmedText || !chatSession) return;
 
         if (isProcessingRef.current) {
-            queuedMessagesRef.current.push(trimmedText);
+            queuedMessagesRef.current.push({ text: trimmedText, meta });
             setQueuedCount(queuedMessagesRef.current.length);
             return;
         }
 
-        void processUserMessage(trimmedText);
+        void processUserMessage(trimmedText, meta);
     };
 
     const handleSend = async () => {
@@ -1021,7 +1044,9 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
 
         const userText = input.trim();
         setInput('');
-        queueOrSendMessage(userText);
+        const usedVoice = composerUsedVoiceRef.current;
+        composerUsedVoiceRef.current = false;
+        queueOrSendMessage(userText, { source: usedVoice ? 'voice' : 'typed' });
     };
     const handleMicClick = () => {
         if (!recognitionRef.current) {
@@ -1115,11 +1140,16 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         window.location.reload();
     };
 
-    // Handle quick reply selection
+    // Handle quick reply selection — the clicked question/option ids travel with
+    // the message so the discourse log can tell a click from a typed reply.
     const handleQuickReplySelect = async (questionId: string, optionId: string, optionLabel: string) => {
+        const questionText = currentQuickReply?.questionText ?? '';
         setQuickReplyResponsesState(prev => ({ ...prev, [questionId]: optionId }));
         setCurrentQuickReply(null);
-        queueOrSendMessage(optionLabel);
+        queueOrSendMessage(optionLabel, {
+            source: 'quick_reply',
+            quickReply: { questionId, optionId, questionText },
+        });
     };
 
     const canInteract = Boolean(chatSession);
