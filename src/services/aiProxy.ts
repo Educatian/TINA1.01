@@ -1,9 +1,12 @@
 /* ============================================================================
    TINA — CLIENT FOR THE SERVER-SIDE AI PROXY
 
-   All Gemini / HuggingFace traffic goes through
-   /.netlify/functions/ai-proxy with the learner's Supabase access token.
-   API keys never reach the browser (see netlify/functions/ai-proxy.mts).
+   All Gemini / HuggingFace traffic goes through /api/ai-proxy with the
+   learner's Supabase access token. API keys never reach the browser.
+   The same path serves both hosts: on Cloudflare Pages it is the Pages Function
+   (functions/api/ai-proxy.ts); on Netlify a redirect maps it to the Netlify
+   Function (netlify/functions/ai-proxy.mts). So hosting can move between the
+   two with zero client changes.
 
    createProxyChat(...) is a drop-in replacement for the @google/genai Chat
    object previously used by ChatInterface: it keeps the conversation history
@@ -17,7 +20,7 @@
 
 import { supabase } from '../lib/supabase';
 
-const PROXY_URL = '/.netlify/functions/ai-proxy';
+const PROXY_URL = '/api/ai-proxy';
 
 export class ProxyRateLimitError extends Error {
     constructor() {

@@ -1,0 +1,6 @@
+# Cloudflare Pages config for TINA's web hosting (Supabase stays the backend).
+# Static build is published from dist/; Pages auto-compiles functions/ into
+# Functions (the AI proxy at /api/ai-proxy). Deploy: `npm run cf:deploy`.
+name = "tina"
+compatibility_date = "2026-06-01"
+pages_build_output_dir = "dist"

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/services/*.test.mjs"
+    "test": "node --test src/services/*.test.mjs",
+    "cf:dev": "wrangler pages dev",
+    "cf:deploy": "npm run build && wrangler pages deploy"
   },
   "dependencies": {
     "@google/genai": "^1.33.0",
