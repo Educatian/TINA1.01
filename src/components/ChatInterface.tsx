@@ -63,6 +63,7 @@ import { ProgressBar } from './ProgressBar';
 import { TinaAvatar, avatarStateForMove, type TinaAvatarState } from './TinaAvatar';
 import { MarkdownLite } from './MarkdownLite';
 import { Onboarding } from './Onboarding';
+import { UsageGuide } from './UsageGuide';
 import { ReturnReminder } from './ReturnReminder';
 import { onboardingSeenKey } from '../services/onboardingScript';
 import { ActivityContextHeader } from './ActivityContextHeader';
@@ -264,6 +265,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const [pendingAvatarState, setPendingAvatarState] = useState<TinaAvatarState>('thinking');
     // First-run TINA-narrated onboarding (per-user, skippable, replayable).
     const [showOnboarding, setShowOnboarding] = useState(false);
+    // Embedded "how to use TINA" guide (role-aware narrated screencast).
+    const [showGuide, setShowGuide] = useState(false);
     // Artifact-anchored reflection: a real teaching artifact the learner
     // chooses to reflect ON (lesson plan, student work, AI prompt, link).
     const [artifact, setArtifact] = useState<SessionArtifact | null>(null);
@@ -1185,6 +1188,14 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         >
                             How this works
                         </button>
+                        <button
+                            type="button"
+                            className="onboarding-replay-btn"
+                            onClick={() => setShowGuide(true)}
+                            title="Open the TINA usage guide"
+                        >
+                            📘 Guide
+                        </button>
                     </div>
 
                     {!actsAsInstructor && (
@@ -1398,6 +1409,13 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     activityConfig={activityConfig}
                     onComplete={markOnboardingSeen}
                     onSkip={markOnboardingSeen}
+                />
+            )}
+
+            {showGuide && (
+                <UsageGuide
+                    initialRole={actsAsInstructor ? 'instructor' : 'learner'}
+                    onClose={() => setShowGuide(false)}
                 />
             )}
         </>

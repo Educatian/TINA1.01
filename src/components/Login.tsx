@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { hasSupabaseConfig } from '../lib/supabase';
+import { UsageGuide } from './UsageGuide';
+import type { GuideRole } from '../services/usageGuideScript';
 
 export function Login() {
     const navigate = useNavigate();
@@ -10,6 +12,7 @@ export function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showStory, setShowStory] = useState(false);
+    const [guideRole, setGuideRole] = useState<GuideRole | null>(null);
     const [resetSent, setResetSent] = useState(false);
     const [resetError, setResetError] = useState<string | null>(null);
     const [resetBusy, setResetBusy] = useState(false);
@@ -79,12 +82,20 @@ export function Login() {
                         AI use, and what to try next.
                     </p>
 
-                    <button type="button" className="hero-story-btn" onClick={() => setShowStory(true)}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
-                        Watch TINA&apos;s story
-                    </button>
+                    <div className="hero-cta-row">
+                        <button type="button" className="hero-story-btn" onClick={() => setShowStory(true)}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                            Watch TINA&apos;s story
+                        </button>
+                        <button type="button" className="hero-guide-btn" onClick={() => setGuideRole('learner')}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM8 4h3v8l-1.5-.9L8 12V4z" />
+                            </svg>
+                            How to use TINA
+                        </button>
+                    </div>
 
                     <div className="landing-features">
                         <div className="feature-item">
@@ -271,6 +282,10 @@ export function Login() {
                         />
                     </div>
                 </div>
+            )}
+
+            {guideRole && (
+                <UsageGuide initialRole={guideRole} onClose={() => setGuideRole(null)} />
             )}
         </div>
     );

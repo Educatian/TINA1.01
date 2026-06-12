@@ -3715,3 +3715,82 @@ body {
 }
 .artifact-save-btn:hover { background: #F1C40F; }
 .artifact-save-btn:disabled { background: #F4E6B8; color: #B7A94B; cursor: not-allowed; }
+
+/* ============================================================================
+   Usage Guide — embedded role-aware narrated screencast (how to use TINA).
+   ========================================================================== */
+.usage-guide-overlay {
+    position: fixed; inset: 0; z-index: 1100;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    background: rgba(44, 62, 80, 0.5); backdrop-filter: blur(4px);
+    animation: onboarding-fade 0.3s ease-out;
+}
+.usage-guide-card {
+    width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
+    background: #FFFEF7; border-radius: 24px; padding: 18px 20px 22px;
+    box-shadow: 0 24px 60px rgba(44, 62, 80, 0.28); border: 1.5px solid #F6ECC0;
+}
+.usage-guide-topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.usage-guide-roles { display: inline-flex; background: #FBF4DA; border-radius: 999px; padding: 3px; gap: 2px; }
+.usage-guide-role {
+    border: none; background: none; cursor: pointer; border-radius: 999px;
+    font-size: 0.82rem; font-weight: 600; color: #9A7D0A; padding: 6px 12px; transition: background 0.2s ease, color 0.2s ease;
+}
+.usage-guide-role.active { background: #F4D03F; color: #2C3E50; box-shadow: 0 2px 6px rgba(212, 172, 13, 0.3); }
+.usage-guide-topbar-actions { display: flex; align-items: center; gap: 4px; }
+.usage-guide-voice, .usage-guide-close {
+    background: none; border: none; cursor: pointer; color: #B7950B;
+    width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 1rem; transition: background 0.2s ease;
+}
+.usage-guide-voice:hover, .usage-guide-close:hover { background: #FCF3CF; }
+
+.usage-guide-stage {
+    position: relative; border-radius: 16px; overflow: hidden;
+    background: linear-gradient(135deg, #FDF8E8 0%, #FCF3CF 100%);
+    border: 1.5px solid #F0E68C; aspect-ratio: 16 / 10; display: flex; align-items: center; justify-content: center;
+}
+.usage-guide-frame { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.usage-guide-frame-fallback { flex-direction: column; }
+.usage-guide-frame-icon { font-size: 4rem; opacity: 0.6; }
+.usage-guide-step-badge {
+    position: absolute; bottom: 10px; right: 10px;
+    background: rgba(44, 62, 80, 0.78); color: #fff; font-size: 0.72rem; font-weight: 600;
+    padding: 4px 10px; border-radius: 999px; backdrop-filter: blur(2px);
+}
+
+.usage-guide-body { margin-top: 16px; text-align: center; }
+.usage-guide-title { font-size: 1.2rem; font-weight: 700; color: #2C3E50; margin: 0 0 8px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.usage-guide-title-icon { font-size: 1.1rem; }
+.usage-guide-text { margin: 0; color: #4A5568; font-size: 0.95rem; line-height: 1.6; max-width: 460px; margin-inline: auto; }
+
+.usage-guide-dots { display: flex; justify-content: center; gap: 7px; margin: 16px 0 14px; }
+.usage-guide-dot { width: 8px; height: 8px; border-radius: 50%; background: #EADFA8; transition: background 0.2s ease, transform 0.2s ease; }
+.usage-guide-dot.active { background: #F4D03F; transform: scale(1.35); }
+.usage-guide-dot.done { background: #D4AC0D; }
+
+.usage-guide-actions { display: flex; justify-content: space-between; gap: 10px; }
+.usage-guide-actions .btn { min-width: 110px; }
+.usage-guide-back:disabled { opacity: 0.4; cursor: not-allowed; }
+
+@media (max-width: 520px) {
+    .usage-guide-card { padding: 14px 14px 18px; }
+    .usage-guide-role { padding: 6px 9px; font-size: 0.78rem; }
+    .usage-guide-text { font-size: 0.9rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .usage-guide-overlay { animation: none; }
+    .usage-guide-dot { transition: none; }
+}
+
+/* landing entry button — sits under "Watch TINA's story" */
+.hero-guide-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255, 255, 255, 0.16); border: 1.5px solid rgba(255, 255, 255, 0.55);
+    color: #fff; font-size: 0.9rem; font-weight: 600; padding: 9px 18px; border-radius: 999px;
+    cursor: pointer; backdrop-filter: blur(3px); transition: background 0.2s ease;
+}
+.hero-guide-btn:hover { background: rgba(255, 255, 255, 0.28); }
+
+/* landing hero CTA row holds the story + guide buttons side by side */
+.hero-cta-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
