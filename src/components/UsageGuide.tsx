@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     buildUsageGuide,
     GUIDE_ROLES,
@@ -26,7 +27,13 @@ interface UsageGuideProps {
 }
 
 export function UsageGuide({ initialRole = 'learner', onClose }: UsageGuideProps) {
+    const navigate = useNavigate();
     const [role, setRole] = useState<GuideRole>(initialRole);
+
+    const openFullPage = () => {
+        onClose(); // unmount cleanup pauses any playing narration
+        navigate(`/guide?role=${role}`);
+    };
     const [index, setIndex] = useState(0);
     const [frameOk, setFrameOk] = useState(true);
     const [voiceOn, setVoiceOn] = useState<boolean>(() => {
@@ -136,6 +143,10 @@ export function UsageGuide({ initialRole = 'learner', onClose }: UsageGuideProps
                     </h2>
                     <p className="usage-guide-text">{step.body}</p>
                 </div>
+
+                <button type="button" className="usage-guide-fullpage" onClick={openFullPage}>
+                    📖 Read the full guide with bigger screenshots →
+                </button>
 
                 <div className="usage-guide-dots" aria-hidden="true">
                     {steps.map((s, i) => (

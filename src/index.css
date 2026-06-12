@@ -3921,3 +3921,61 @@ body {
     font-size: 0.85rem;
     font-weight: 600;
 }
+
+/* ============================================================================
+   Full-page guidebook (/guide) — detailed, large-screenshot version.
+   ========================================================================== */
+.usage-guide-fullpage {
+    display: block; width: 100%; margin: 14px 0 2px;
+    background: none; border: none; color: #B7950B; font-size: 0.82rem; font-weight: 600;
+    cursor: pointer; text-align: center;
+}
+.usage-guide-fullpage:hover { color: #9A7D0A; text-decoration: underline; }
+
+.guidebook-page { min-height: 100vh; background: #FFFEF7; color: #2C3E50; padding-bottom: 60px; }
+.guidebook-topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 12px 20px; background: rgba(255,254,247,0.92); backdrop-filter: blur(6px);
+    border-bottom: 1.5px solid #F4E6B8;
+}
+.guidebook-back { background: none; border: none; color: #9A7D0A; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+.guidebook-back:hover { color: #2C3E50; }
+.guidebook-roles { display: inline-flex; background: #FBF4DA; border-radius: 999px; padding: 3px; gap: 2px; }
+.guidebook-role { border: none; background: none; cursor: pointer; border-radius: 999px; font-size: 0.85rem; font-weight: 600; color: #9A7D0A; padding: 7px 14px; }
+.guidebook-role.active { background: #F4D03F; color: #2C3E50; box-shadow: 0 2px 6px rgba(212,172,13,0.3); }
+
+.guidebook-hero { max-width: 760px; margin: 0 auto; padding: 44px 24px 8px; text-align: center; }
+.guidebook-eyebrow { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #B7950B; }
+.guidebook-hero h1 { font-size: clamp(1.6rem, 4vw, 2.4rem); margin: 8px 0 10px; }
+.guidebook-hero p { font-size: 1.05rem; color: #6b6b6b; margin: 0; }
+
+.guidebook-steps { list-style: none; max-width: 1000px; margin: 28px auto 0; padding: 0 24px; display: flex; flex-direction: column; gap: 44px; }
+.guidebook-step { display: grid; grid-template-columns: 1.1fr 1fr; gap: 32px; align-items: center; scroll-margin-top: 80px; }
+.guidebook-step.reversed .guidebook-step-figure { order: 2; }
+.guidebook-step-figure img {
+    width: 100%; height: auto; display: block; border-radius: 18px;
+    border: 1.5px solid #F0E68C; box-shadow: 0 18px 44px rgba(120,95,10,0.16);
+}
+.guidebook-step-num { font-size: 0.82rem; font-weight: 700; color: #B7950B; display: flex; align-items: center; gap: 8px; }
+.guidebook-step-icon { font-size: 1.1rem; }
+.guidebook-step-body h2 { font-size: 1.45rem; margin: 8px 0 12px; }
+.guidebook-step-lead { font-size: 1.05rem; line-height: 1.6; color: #2C3E50; margin: 0 0 12px; font-weight: 500; }
+.guidebook-step-detail { font-size: 0.96rem; line-height: 1.65; color: #555; margin: 0 0 16px; }
+.guidebook-listen {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #FBF4DA; border: 1.5px solid #E8D98A; color: #9A7D0A;
+    font-size: 0.85rem; font-weight: 700; padding: 8px 16px; border-radius: 999px; cursor: pointer;
+}
+.guidebook-listen:hover { background: #F7ECC4; }
+.guidebook-listen.playing { background: #F4D03F; color: #2C3E50; border-color: #F4D03F; }
+
+.guidebook-footer { max-width: 600px; margin: 56px auto 0; padding: 0 24px; text-align: center; }
+.guidebook-footer p { font-size: 1.05rem; color: #4A5568; margin: 0 0 16px; }
+.guidebook-footer .btn { min-width: 200px; }
+
+@media (max-width: 760px) {
+    .guidebook-step { grid-template-columns: 1fr; gap: 16px; }
+    .guidebook-step.reversed .guidebook-step-figure { order: 0; }
+    .guidebook-hero { padding-top: 28px; }
+}

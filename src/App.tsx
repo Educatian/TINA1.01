@@ -13,6 +13,7 @@ import './index.css';
 const AdminDashboard = lazy(() => import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const Certificate = lazy(() => import('./components/Certificate').then((m) => ({ default: m.Certificate })));
 const MyAccount = lazy(() => import('./components/MyAccount').then((m) => ({ default: m.MyAccount })));
+const GuidebookPage = lazy(() => import('./components/GuidebookPage').then((m) => ({ default: m.GuidebookPage })));
 
 function RouteFallback() {
     return (
@@ -100,6 +101,14 @@ function App() {
                     element={user ? <Navigate to="/" replace /> : <Login />}
                 />
                 <Route path="/reset-password" element={<ResetPassword />} />
+                <Route
+                    path="/guide"
+                    element={
+                        <Suspense fallback={<RouteFallback />}>
+                            <GuidebookPage />
+                        </Suspense>
+                    }
+                />
                 <Route
                     path="/"
                     element={

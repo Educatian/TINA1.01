@@ -28,6 +28,8 @@ export interface GuideStep {
     icon: string;
     /** Pre-recorded narration clip /narration/guide/<clipId>.mp3 (= clipId). */
     clipId: string;
+    /** Longer, instructional explanation shown only on the full-page guidebook. */
+    detail: string;
 }
 
 export const GUIDE_ROLES: { value: GuideRole; label: string; icon: string; blurb: string }[] = [
@@ -73,8 +75,46 @@ export const GUIDE_NARRATION_TEXT: Record<string, string> = {
         "Finally, you can send a short personal note back to any learner on their session, closing the loop between their reflection and your guidance. That's TINA, end to end.",
 };
 
+/**
+ * Longer, instructional copy for the full-page guidebook only (the modal shows
+ * just the narration `body`). Each is a short paragraph that expands on the
+ * step with concrete how-to detail.
+ */
+export const GUIDE_DETAIL_TEXT: Record<string, string> = {
+    // ---- learner track ----
+    'l-welcome':
+        "TINA is a short, conversational reflection, not a test or an assignment you can pass or fail. Over about ten minutes she asks a handful of open questions to help you put words to what matters in your teaching and how AI is shaping it. There is nothing to prepare; you only need a recent experience and a few honest minutes.",
+    'l-signin':
+        "Use your email to sign in (or create an account in seconds). Your reflections are private to you and stored under your account, so you can come back and continue later. If your instructor has assigned a specific activity, it appears automatically once you sign in, with the topic and goal they set.",
+    'l-start':
+        "Begin with one concrete, recent teaching moment, ideally something that felt important, difficult, or unfinished. You do not need polished answers: short, honest replies work best, and \"I'm not sure\" is a perfectly good place to start. TINA asks one question at a time and mirrors back what she hears, so the conversation stays focused and unhurried.",
+    'l-artifact':
+        "Reflection is richer when it sits on real evidence. Tap \"Anchor on a real teaching artifact\" to bring in a lesson plan, a piece of student work, or the exact AI prompt you used (paste text or add a link). TINA then grounds her questions in that artifact instead of staying abstract. It stays pinned for the whole session, and she never grades it; it is just the shared object you reflect from.",
+    'l-pace':
+        "The bar at the top tracks the conversation's pace, roughly twelve short turns over about ten minutes. There is no penalty for going slowly. TINA keeps to one question per turn and reflects your essence back before asking the next, so you always know she is following you and you never feel rushed or quizzed.",
+    'l-report':
+        "When the session closes, TINA writes a reflection report built entirely from your own words. It opens with a constellation of the values that guided you and the tension they pulled against, then summarizes your current AI approach and ends with one small next move to try. It is a coaching debrief, not a score, and you can revisit or export it later.",
+    'l-return':
+        "Each session is meant to build on the last. When you return, TINA opens by checking in on the \"one next move\" you chose, what happened when you tried it, or what got in the way. That turns a single chat into an ongoing cycle, and over time the conversation can ask lighter questions as your reflection deepens.",
+    // ---- instructor track ----
+    'i-welcome':
+        "Every learner talks to the same TINA, but you decide the context she works within: the reflection goal, the topic, the learner level, and what learners produce. Her reflective stance (a warm mirror, never an evaluator) stays constant for everyone, so you get comparable reflection across a class while still aiming it at your specific assignment.",
+    'i-signin':
+        "Sign in with an instructor account (your email is granted instructor access). You land on the same TINA app, but with two extra surfaces learners never see: an activity-authoring header and the admin dashboard. A \"Learner Test Mode\" toggle lets you preview exactly what students experience.",
+    'i-author':
+        "In Activity Studio, create an activity and choose its reflection goal (reflection, case analysis, lesson design, ethics decision, or feedback revision), add a topic, set the learner level, and pick the output format. TINA's questions and onboarding adapt to those choices, while the underlying coaching engine and safety rules stay the same.",
+    'i-assign':
+        "Publish the activity and assign your learners. When they sign in, your context is already waiting for them, so there is no setup on their side. The dashboard then shows who has been assigned, who has started, who has finished, and who may need a follow-up nudge, in real time.",
+    'i-dashboard':
+        "The dashboard turns every session into research. Overview gives completion and pace; NLP Analytics shows sentiment, emotion, and engagement; Research Signals holds Gemini-extracted reflection depth and ethics/practicum cues; Coaching Moves shows the ALACT-grounded move log and a lexical-vs-Gemini agreement check. Hover any section's ⓘ for what it means.",
+    'i-export':
+        "Every table exports as CSV or JSON, and each field is documented for preregistration and sharing. A built-in A/B mode can split learners fairly and automatically between the coaching engine on and off, so you can study its effect. Nothing requires leaving the app or touching the database directly.",
+    'i-feedback':
+        "When a learner asks for feedback, their request appears in the Feedback tab with their session in context. You can read their reflection signals and send a short, personal note back, closing the loop between what they reflected on and your guidance, without breaking TINA's non-evaluative stance inside the chat.",
+};
+
 function step(id: string, title: string, frame: string, icon: string): GuideStep {
-    return { id, title, body: GUIDE_NARRATION_TEXT[id], frame, icon, clipId: id };
+    return { id, title, body: GUIDE_NARRATION_TEXT[id], frame, icon, clipId: id, detail: GUIDE_DETAIL_TEXT[id] };
 }
 
 const LEARNER_STEPS: GuideStep[] = [

@@ -58,3 +58,12 @@ test('usageGuideSeenKey is stable + role-scoped', () => {
   assert.equal(usageGuideSeenKey('learner'), 'tina-usage-guide-seen-learner');
   assert.notEqual(usageGuideSeenKey('learner'), usageGuideSeenKey('instructor'));
 });
+
+test('every step has a non-empty detail paragraph for the full-page guide', () => {
+  for (const role of ['learner', 'instructor']) {
+    for (const s of buildUsageGuide(role)) {
+      assert.ok(typeof s.detail === 'string' && s.detail.length > 60, `${s.id} has a substantial detail`);
+      assert.notEqual(s.detail, s.body, `${s.id} detail differs from the short narration`);
+    }
+  }
+});
