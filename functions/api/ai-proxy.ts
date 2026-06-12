@@ -40,7 +40,7 @@ interface Env {
     AI?: { run: (model: string, opts: any) => Promise<any> };
 }
 
-const WORKERS_AI_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const WORKERS_AI_MODEL = '@cf/meta/llama-4-scout-17b-16e-instruct';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const ALLOWED_GEMINI_MODELS = new Set(['gemini-2.5-flash']);
@@ -254,7 +254,8 @@ async function streamWorkersAi(contents: Content[], systemInstruction: string | 
             },
         });
         return new Response(readable, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
-    } catch {
+    } catch (err: any) {
+        console.error('workers-ai fallback failed:', String(err?.message || err));
         return streamPlainText(FALLBACK_BUSY);
     }
 }
