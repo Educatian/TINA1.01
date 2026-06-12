@@ -44,3 +44,22 @@ test('next-move + carry extraction still parse the report grammar', () => {
   const qs = extractCarryQuestions(report);
   assert.ok(qs.length >= 2 && /knowledge/.test(qs[0]));
 });
+
+// ---- reflectorLevelFromHistory (faded scaffolding signal) -----------------
+import { reflectorLevelFromHistory, REFLECTOR_HISTORY_MIN_TURNS } from './reflectionScoring.ts';
+
+test('reflectorLevelFromHistory: thin history -> developing (neutral default)', () => {
+  assert.equal(reflectorLevelFromHistory(0, 1), 'developing');
+  assert.equal(reflectorLevelFromHistory(REFLECTOR_HISTORY_MIN_TURNS - 1, 1), 'developing');
+});
+
+test('reflectorLevelFromHistory: deep history -> advanced, shallow -> novice', () => {
+  assert.equal(reflectorLevelFromHistory(10, 0.6), 'advanced');
+  assert.equal(reflectorLevelFromHistory(10, 0.9), 'advanced');
+  assert.equal(reflectorLevelFromHistory(10, 0.25), 'novice');
+  assert.equal(reflectorLevelFromHistory(10, 0.1), 'novice');
+});
+
+test('reflectorLevelFromHistory: mid-range with enough history -> developing', () => {
+  assert.equal(reflectorLevelFromHistory(10, 0.4), 'developing');
+});

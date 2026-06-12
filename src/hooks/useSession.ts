@@ -1,5 +1,41 @@
 import { supabase } from '../lib/supabase';
 import type { Message, OutputFormat, Session, SessionOutput } from '../types';
+import type { SessionArtifact } from '../services/artifactService';
+
+// Best-effort persistence of the reflection artifact (feature-detected column).
+let artifactColumnDisabled = false;
+function isMissingArtifactColumn(error: { code?: string; message?: string } | null): boolean {
+    if (!error) return false;
+    const code = error.code || '';
+    const message = (error.message || '').toLowerCase();
+    return (
+        code === '42703' ||      // undefined_column
+        code === 'PGRST204' ||   // column not found in schema cache
+        code === 'PGRST205' ||
+        message.includes('does not exist') ||
+        message.includes('could not find') ||
+        message.includes('schema cache')
+    );
+}
+
+/**
+ * Persist the learner's reflection artifact onto the session. Best-effort: if
+ * the artifact_context column has not been migrated (tina-artifact-anchor.sql),
+ * this no-ops and in-session anchoring still works.
+ */
+export async function saveSessionArtifact(sessionId: string, artifact: SessionArtifact | null): Promise<void> {
+    if (!sessionId || artifactColumnDisabled) return;
+    try {
+        const { error } = await supabase
+            .from('sessions')
+            .update({ artifact_context: artifact })
+            .eq('id', sessionId);
+        if (error && isMissingArtifactColumn(error)) {
+            artifactColumnDisabled = true;
+            console.info('[artifact] sessions.artifact_context column not found — anchoring still works in-session (apply tina-artifact-anchor.sql to persist across resume).');
+        }
+    } catch { /* non-blocking */ }
+}
 
 export async function createSession(userId: string, activityId?: string | null): Promise<string | null> {
     const { data, error } = await supabase

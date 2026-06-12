@@ -112,6 +112,9 @@ export interface Session {
   turn_count: number;
   created_at: string;
   completed_at: string | null;
+  // Artifact-anchored reflection: the real teaching artifact the learner chose
+  // to reflect ON (feature-detected column; see tina-artifact-anchor.sql).
+  artifact_context?: import('../services/artifactService').SessionArtifact | null;
   // Analytics fields
   session_duration_seconds?: number;
   completion_status?: 'in_progress' | 'completed' | 'abandoned';

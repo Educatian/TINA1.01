@@ -280,3 +280,43 @@ test('ALACT walk: a deep, well-paced session advances action->...->trial then cl
   // and it must end on the synthesis
   assert.ok(seen.includes('CLOSE_SYNTHESIS'));
 });
+
+// ---- faded / adaptive scaffolding (reflectorLevel) ------------------------
+test('faded scaffolding: advanced reflector gets an extra open probe before the stem', () => {
+  const classified = classifyTurn('I just used it for a quiz.');
+  // At one prior shallow turn, the default learner is already escalated to a
+  // stem; an advanced reflector instead earns another DEEPEN probe.
+  const adv = selectMove(baseState({ phase: 'awareness', classified, consecutiveShallow: 1, reflectorLevel: 'advanced' }));
+  assert.equal(adv.move, 'DEEPEN_REFLECTION');
+  // Only at the third consecutive shallow turn does the advanced learner get a stem.
+  const advStem = selectMove(baseState({ phase: 'awareness', classified, consecutiveShallow: 2, reflectorLevel: 'advanced' }));
+  assert.equal(advStem.move, 'SCAFFOLD_WITH_STEM');
+});
+
+test('faded scaffolding: novice/developing keep the default threshold (stem at 2nd shallow)', () => {
+  const classified = classifyTurn('I just used it for a quiz.');
+  for (const level of ['novice', 'developing', undefined]) {
+    const s = selectMove(baseState({ phase: 'awareness', classified, consecutiveShallow: 1, reflectorLevel: level }));
+    assert.equal(s.move, 'SCAFFOLD_WITH_STEM', `level=${level} escalates at the default threshold`);
+  }
+});
+
+test('faded scaffolding: directive tone is tuned for advanced vs novice, neutral default', () => {
+  const classified = classifyTurn('I just used it for a quiz.');
+  const adv = selectMove(baseState({ phase: 'awareness', classified, consecutiveShallow: 0, reflectorLevel: 'advanced' }));
+  assert.equal(adv.move, 'DEEPEN_REFLECTION');
+  assert.match(adv.directive, /track record of deep, critical reflection/i);
+  const nov = selectMove(baseState({ phase: 'awareness', classified, consecutiveShallow: 0, reflectorLevel: 'novice' }));
+  assert.match(nov.directive, /early in building reflective habits/i);
+  const dev = selectMove(baseState({ phase: 'awareness', classified, consecutiveShallow: 0, reflectorLevel: 'developing' }));
+  assert.equal(dev.directive, MOVES.DEEPEN_REFLECTION.directive, 'developing leaves the directive untouched');
+});
+
+test('faded scaffolding: reflectorLevel does not change non-scaffolding moves', () => {
+  const classified = classifyTurn('I think the real tension is because I value fairness but not all students have access.');
+  const a = selectMove(baseState({ phase: 'awareness', classified, reflectorLevel: 'advanced' }));
+  const b = selectMove(baseState({ phase: 'awareness', classified, reflectorLevel: 'novice' }));
+  assert.equal(a.move, 'NAME_ESSENTIAL');
+  assert.equal(b.move, 'NAME_ESSENTIAL');
+  assert.equal(a.directive, b.directive, 'a critical turn is unaffected by reflector level');
+});

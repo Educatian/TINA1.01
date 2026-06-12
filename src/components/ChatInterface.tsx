@@ -3,7 +3,16 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { createProxyChat, type ProxyChat } from '../services/aiProxy';
 import { useAuth } from '../hooks/useAuth';
-import { createSession, updateSession, completeSession, getSession, upsertSessionOutput } from '../hooks/useSession';
+import { createSession, updateSession, completeSession, getSession, upsertSessionOutput, saveSessionArtifact } from '../hooks/useSession';
+import {
+    buildArtifactDirective,
+    getSessionArtifact,
+    hasArtifact,
+    normalizeArtifact,
+    ARTIFACT_KIND_OPTIONS,
+    type ArtifactKind,
+    type SessionArtifact,
+} from '../services/artifactService';
 import { classifyTeacherCluster } from '../services/nlpService';
 import {
     initSessionTracking,
@@ -32,6 +41,8 @@ import {
 import {
     getReturningLearnerContext,
     buildReturningLearnerAddendum,
+    getLearnerReflectorLevel,
+    type ReflectorLevel,
 } from '../services/reflectionLoop';
 import {
     buildActivitySystemInstruction,
@@ -253,6 +264,14 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const [pendingAvatarState, setPendingAvatarState] = useState<TinaAvatarState>('thinking');
     // First-run TINA-narrated onboarding (per-user, skippable, replayable).
     const [showOnboarding, setShowOnboarding] = useState(false);
+    // Artifact-anchored reflection: a real teaching artifact the learner
+    // chooses to reflect ON (lesson plan, student work, AI prompt, link).
+    const [artifact, setArtifact] = useState<SessionArtifact | null>(null);
+    const [showArtifactPanel, setShowArtifactPanel] = useState(false);
+    const [artifactDraft, setArtifactDraft] = useState<{ kind: ArtifactKind; note: string; link: string }>(
+        { kind: 'lesson-plan', note: '', link: '' },
+    );
+    const artifactRef = useRef<SessionArtifact | null>(null);
     const isProcessingRef = useRef(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -273,6 +292,10 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     // Content tags that have surfaced this session (drives Layer-3 coverage
     // steering in the engine's REFRAME_PERSPECTIVE directive).
     const coveredTagsRef = useRef<Set<ContentTag>>(new Set());
+    // Demonstrated reflective maturity from PRIOR sessions, read once at session
+    // start. Fades scaffolding in the engine (advanced -> lighter/later stem;
+    // novice -> earlier/warmer support). Defaults to 'developing' (no change).
+    const reflectorLevelRef = useRef<ReflectorLevel>('developing');
     // Coaching-engine A/B assignment for this learner (stable across sessions).
     const experimentRef = useRef<ExperimentAssignment>(assignCondition(user?.id));
 
@@ -319,6 +342,10 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     useEffect(() => {
         sessionIdRef.current = sessionId;
     }, [sessionId]);
+
+    useEffect(() => {
+        artifactRef.current = artifact;
+    }, [artifact]);
 
     // Show the narrated onboarding once per learner (skippable, replayable).
     // Instructors acting as instructors don't get the cold-start tour; they can
@@ -443,6 +470,13 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         hasInitialized.current = true;
 
         const initChat = async () => {
+            // Read the learner's demonstrated reflective maturity once, up front,
+            // so faded scaffolding is ready before their first turn. Best-effort:
+            // any failure leaves the neutral 'developing' default in place.
+            void getLearnerReflectorLevel(user.id)
+                .then((level) => { reflectorLevelRef.current = level; })
+                .catch(() => { /* keep default */ });
+
             try {
                 let currentActivityRecord = await resolveActivityForChat({
                     userId: user.id,
@@ -482,6 +516,12 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     const existingMessages = resumeSession.messages as Message[] || [];
                     replaceMessages(existingMessages);
                     setTurnCountState(resumeSession.turn_count || 0);
+                    // Reload the artifact this session was anchored on, if any.
+                    const resumedArtifact = getSessionArtifact(resumeSession);
+                    if (resumedArtifact) {
+                        setArtifact(resumedArtifact);
+                        artifactRef.current = resumedArtifact;
+                    }
 
                     // Resume through the server-side proxy: history is passed as
                     // real chat turns (not stuffed into the system instruction).
@@ -702,6 +742,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     budgetMs: SESSION_BUDGET_MS,
                     consecutiveShallow: consecutiveShallowRef.current,
                     coveredTags: Array.from(coveredTagsRef.current),
+                    reflectorLevel: reflectorLevelRef.current,
                 });
                 consecutiveShallowRef.current = coachingPlan.classified.cues.shallow
                     ? consecutiveShallowRef.current + 1
@@ -724,9 +765,17 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             }
         }
 
-        const messageToSend = coachingPlan
+        // Artifact-anchored reflection: if the learner attached a real teaching
+        // artifact, keep it as the anchor on every turn so TINA grounds the
+        // reflection in its specifics instead of reflecting in the abstract.
+        const artifactDirective = buildArtifactDirective(artifactRef.current);
+
+        let messageToSend = coachingPlan
             ? `${userMsg.text}\n\n[COACHING DIRECTIVE — follow this for your reply, keep your TINA persona and the one-question rule: ${directiveText}]`
             : userMsg.text;
+        if (artifactDirective) {
+            messageToSend += `\n\n${artifactDirective}`;
+        }
 
         setPendingAvatarState(avatarStateForMove(coachingPlan?.move));
         setStreamingText('');
@@ -1018,9 +1067,37 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
         alactPhaseRef.current = 'action';
         consecutiveShallowRef.current = 0;
         coveredTagsRef.current = new Set();
+        setArtifact(null);
+        artifactRef.current = null;
+        setShowArtifactPanel(false);
         sessionStartMsRef.current = Date.now();
         hasInitialized.current = false;
         window.location.reload();
+    };
+
+    const openArtifactPanel = () => {
+        // Seed the editor from the current artifact so editing is non-destructive.
+        setArtifactDraft({
+            kind: artifact?.kind || 'lesson-plan',
+            note: artifact?.note || '',
+            link: artifact?.link || '',
+        });
+        setShowArtifactPanel(true);
+    };
+
+    const handleSaveArtifact = () => {
+        const next = normalizeArtifact(artifactDraft);
+        setArtifact(next);
+        artifactRef.current = next;
+        setShowArtifactPanel(false);
+        if (sessionIdRef.current) void saveSessionArtifact(sessionIdRef.current, next);
+    };
+
+    const handleRemoveArtifact = () => {
+        setArtifact(null);
+        artifactRef.current = null;
+        setShowArtifactPanel(false);
+        if (sessionIdRef.current) void saveSessionArtifact(sessionIdRef.current, null);
     };
 
     const handleLearnerActivityChange = (nextActivityId: string) => {
@@ -1109,6 +1186,88 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                             How this works
                         </button>
                     </div>
+
+                    {!actsAsInstructor && (
+                        <div className="artifact-anchor">
+                            {hasArtifact(artifact) ? (
+                                <div className="artifact-card" role="note" aria-label="Teaching artifact you are reflecting on">
+                                    <div className="artifact-card-body">
+                                        <span className="artifact-card-eyebrow">📎 Reflecting on</span>
+                                        <span className="artifact-card-kind">
+                                            {ARTIFACT_KIND_OPTIONS.find((o) => o.value === artifact.kind)?.label || 'Artifact'}
+                                        </span>
+                                        {artifact.note && <p className="artifact-card-note">{artifact.note}</p>}
+                                        {artifact.link && (
+                                            <a className="artifact-card-link" href={artifact.link} target="_blank" rel="noopener noreferrer">
+                                                Open artifact link
+                                            </a>
+                                        )}
+                                    </div>
+                                    <div className="artifact-card-actions">
+                                        <button type="button" className="artifact-edit-btn" onClick={openArtifactPanel}>Edit</button>
+                                        <button type="button" className="artifact-remove-btn" onClick={handleRemoveArtifact}>Remove</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                !showArtifactPanel && (
+                                    <button type="button" className="artifact-add-btn" onClick={openArtifactPanel}>
+                                        📎 Anchor on a real teaching artifact (optional)
+                                    </button>
+                                )
+                            )}
+
+                            {showArtifactPanel && (
+                                <div className="artifact-panel">
+                                    <p className="artifact-panel-help">
+                                        Reflection is richer when it sits on real evidence. Bring a lesson plan, a piece of student work,
+                                        the AI prompt you actually used, or a link, and TINA will anchor the conversation on it.
+                                    </p>
+                                    <label className="artifact-field">
+                                        <span>What is it?</span>
+                                        <select
+                                            value={artifactDraft.kind}
+                                            onChange={(e) => setArtifactDraft((d) => ({ ...d, kind: e.target.value as ArtifactKind }))}
+                                        >
+                                            {ARTIFACT_KIND_OPTIONS.map((o) => (
+                                                <option key={o.value} value={o.value}>{o.label}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <label className="artifact-field">
+                                        <span>Paste or describe it</span>
+                                        <textarea
+                                            value={artifactDraft.note}
+                                            onChange={(e) => setArtifactDraft((d) => ({ ...d, note: e.target.value }))}
+                                            placeholder="e.g. the objective + first activity of the lesson, what a student actually produced, or the exact prompt you gave the AI."
+                                            rows={4}
+                                        />
+                                    </label>
+                                    <label className="artifact-field">
+                                        <span>Link (optional)</span>
+                                        <input
+                                            type="url"
+                                            value={artifactDraft.link}
+                                            onChange={(e) => setArtifactDraft((d) => ({ ...d, link: e.target.value }))}
+                                            placeholder="https://…"
+                                        />
+                                    </label>
+                                    <div className="artifact-panel-actions">
+                                        <button type="button" className="artifact-cancel-btn" onClick={() => setShowArtifactPanel(false)}>
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="artifact-save-btn"
+                                            onClick={handleSaveArtifact}
+                                            disabled={!artifactDraft.note.trim() && !artifactDraft.link.trim()}
+                                        >
+                                            Anchor my reflection
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="chat-messages" role="log" aria-live="polite" aria-label="Conversation with TINA" aria-busy={isLoading}>

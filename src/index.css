@@ -3635,3 +3635,83 @@ body {
 .return-reminder-eyebrow { font-size: 0.8rem; font-weight: 700; color: #B7950B; margin-bottom: 6px; }
 .return-reminder-body { margin: 0 0 6px; color: #2C3E50; font-size: 0.95rem; line-height: 1.5; }
 .return-reminder-cta { margin: 0; color: #7f8c8d; font-size: 0.82rem; }
+
+/* ============================================================================
+   Artifact-anchored reflection — bring a real teaching artifact to reflect ON.
+   ========================================================================== */
+.artifact-anchor { margin-top: 10px; }
+
+.artifact-add-btn {
+    width: 100%;
+    background: #FFFDF5;
+    border: 1.5px dashed #E8D98A;
+    color: #9A7D0A;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 9px 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+.artifact-add-btn:hover { background: #FCF6E0; border-color: #D9C45A; }
+
+.artifact-card {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    background: #FDF8E8;
+    border: 1.5px solid #F0E68C;
+    border-radius: 14px;
+    padding: 12px 14px;
+}
+.artifact-card-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.artifact-card-eyebrow { font-size: 0.72rem; font-weight: 700; color: #B7950B; text-transform: uppercase; letter-spacing: 0.03em; }
+.artifact-card-kind { font-size: 0.9rem; font-weight: 700; color: #2C3E50; }
+.artifact-card-note {
+    margin: 2px 0 0; color: #4A5568; font-size: 0.85rem; line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.artifact-card-link { font-size: 0.82rem; color: #B7950B; font-weight: 600; text-decoration: underline; margin-top: 2px; }
+.artifact-card-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.artifact-edit-btn, .artifact-remove-btn {
+    background: none; border: 1px solid #E8D98A; color: #9A7D0A;
+    font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+}
+.artifact-edit-btn:hover { background: #FCF3CF; }
+.artifact-remove-btn { color: #B0594B; border-color: #E6C3BC; }
+.artifact-remove-btn:hover { background: #FBEDEA; }
+
+.artifact-panel {
+    margin-top: 8px;
+    background: #FFFDF5;
+    border: 1.5px solid #F0E68C;
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.artifact-panel-help { margin: 0; color: #4A5568; font-size: 0.85rem; line-height: 1.5; }
+.artifact-field { display: flex; flex-direction: column; gap: 4px; }
+.artifact-field > span { font-size: 0.78rem; font-weight: 700; color: #6B5D1B; }
+.artifact-field select,
+.artifact-field input,
+.artifact-field textarea {
+    border: 1.5px solid #E8D98A; border-radius: 10px; padding: 8px 10px;
+    font-family: inherit; font-size: 0.88rem; color: #2C3E50; background: #fff; resize: vertical;
+}
+.artifact-field select:focus,
+.artifact-field input:focus,
+.artifact-field textarea:focus { outline: none; border-color: #D4AC0D; }
+.artifact-panel-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.artifact-cancel-btn {
+    background: none; border: 1px solid #DDD; color: #7f8c8d;
+    font-size: 0.82rem; font-weight: 600; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+}
+.artifact-save-btn {
+    background: #F4D03F; border: none; color: #2C3E50;
+    font-size: 0.82rem; font-weight: 700; padding: 7px 16px; border-radius: 999px; cursor: pointer;
+}
+.artifact-save-btn:hover { background: #F1C40F; }
+.artifact-save-btn:disabled { background: #F4E6B8; color: #B7A94B; cursor: not-allowed; }

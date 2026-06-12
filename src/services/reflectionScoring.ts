@@ -78,3 +78,30 @@ export function computeJol(selfRating: DepthBand, points: TrajectoryPoint[]): Jo
     const measuredBand = depthBand(measuredScore);
     return { selfRating, measuredBand, measuredScore, gap: selfRating - measuredBand };
 }
+
+// ---- faded / adaptive scaffolding ------------------------------------------
+
+/**
+ * A learner's demonstrated reflective maturity, derived from their PRIOR
+ * sessions' per-turn depth. Drives faded scaffolding: an advanced reflector
+ * earns lighter, later scaffolding; a novice gets earlier, warmer support.
+ * 'developing' is the neutral default (today's behavior) used whenever there
+ * is not yet enough history to judge.
+ */
+export type ReflectorLevel = 'novice' | 'developing' | 'advanced';
+
+/** Minimum prior coaching turns before we trust a maturity judgment. */
+export const REFLECTOR_HISTORY_MIN_TURNS = 4;
+
+/**
+ * PURE. Map a learner's reflection history to a reflector level. Below the
+ * minimum-history threshold we return 'developing' so a stranger is neither
+ * over- nor under-scaffolded; with enough history, a high critical/descriptive
+ * share marks 'advanced' and a persistently shallow share marks 'novice'.
+ */
+export function reflectorLevelFromHistory(priorTurns: number, priorDepthScore: number): ReflectorLevel {
+    if (priorTurns < REFLECTOR_HISTORY_MIN_TURNS) return 'developing';
+    if (priorDepthScore >= 0.6) return 'advanced';
+    if (priorDepthScore <= 0.25) return 'novice';
+    return 'developing';
+}

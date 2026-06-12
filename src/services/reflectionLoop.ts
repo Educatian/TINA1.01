@@ -30,11 +30,13 @@ export {
     depthScore,
     depthBand,
     computeJol,
+    reflectorLevelFromHistory,
     type ReportSection,
     type DepthBand,
     type JolResult,
+    type ReflectorLevel,
 } from './reflectionScoring';
-import { extractNextMove } from './reflectionScoring';
+import { extractNextMove, depthScore, reflectorLevelFromHistory, type ReflectorLevel } from './reflectionScoring';
 
 // ---------------------------------------------------------------------------
 // Carry-forward storage (table when migrated, localStorage fallback)
@@ -138,6 +140,37 @@ export async function getReturningLearnerContext(userId: string): Promise<Return
         };
     } catch {
         return null;
+    }
+}
+
+/**
+ * getLearnerReflectorLevel — derive the learner's demonstrated reflective
+ * maturity from their PRIOR coaching turns (across all sessions), so the engine
+ * can FADE scaffolding for those who consistently reflect deeply and give more
+ * support to those still building the habit. Best-effort + feature-detected:
+ * if coaching_turns is absent or empty, returns 'developing' (today's behavior).
+ *
+ * Note: this includes turns from the current session too, which is fine — it is
+ * read once at session start, before any of this session's turns are logged.
+ */
+export async function getLearnerReflectorLevel(userId: string): Promise<ReflectorLevel> {
+    try {
+        const { data, error } = await supabase
+            .from('coaching_turns')
+            .select('turn_index, reflection_level, move')
+            .eq('user_id', userId)
+            .limit(2000);
+        if (error || !data || data.length === 0) return 'developing';
+        const points = data
+            .filter((row: any) => ['technical', 'descriptive', 'critical'].includes(row.reflection_level))
+            .map((row: any) => ({
+                turnIndex: row.turn_index ?? 0,
+                reflectionLevel: row.reflection_level,
+                move: row.move ?? 'X',
+            }));
+        return reflectorLevelFromHistory(points.length, depthScore(points));
+    } catch {
+        return 'developing';
     }
 }
 

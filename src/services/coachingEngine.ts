@@ -56,6 +56,12 @@ export type ReflectionLevel = (typeof REFLECTION_LEVELS)[number];
 export const CONTENT_TAGS = ['identity', 'ai-use', 'ai-society', 'affect'] as const;
 export type ContentTag = (typeof CONTENT_TAGS)[number];
 
+// Demonstrated reflective maturity carried in from the learner's PRIOR sessions
+// (computed in reflectionScoring.reflectorLevelFromHistory). Drives faded
+// scaffolding in selectMove. 'developing' is the neutral default = today's
+// behavior, used whenever there is no history signal.
+export type ReflectorLevel = 'novice' | 'developing' | 'advanced';
+
 /**
  * The fixed move set. The selector NEVER invents a move outside this object.
  * Each move records its ALACT phase anchor, the reflection level it serves,
@@ -273,6 +279,13 @@ export interface CoachingState {
   consecutiveShallow?: number;
   /** Content tags that have surfaced at any point this session (caller-tracked). */
   coveredTags?: ContentTag[];
+  /**
+   * Demonstrated reflective maturity from the learner's prior sessions. Fades
+   * scaffolding: 'advanced' learners get a later, lighter stem and briefer
+   * probes; 'novice' learners get earlier, warmer support. Omitted/'developing'
+   * = today's behavior.
+   */
+  reflectorLevel?: ReflectorLevel;
 }
 
 export interface SelectedMove {
@@ -309,6 +322,33 @@ export function shouldClose(state: CoachingState): boolean {
     if (state.elapsedMs >= budget) return true;
   }
   return false;
+}
+
+/**
+ * How many consecutive shallow turns before we escalate from an open
+ * DEEPEN_REFLECTION probe to a heavier SCAFFOLD_WITH_STEM. Faded by reflector
+ * maturity: advanced reflectors get one extra open probe (3); everyone else
+ * keeps today's threshold (2).
+ */
+function scaffoldThreshold(level?: ReflectorLevel): number {
+  return level === 'advanced' ? 3 : 2;
+}
+
+/**
+ * Append a short maturity-aware tone note to a scaffolding directive so the
+ * SAME move lands lighter for an advanced reflector and warmer/more concrete
+ * for a novice. 'developing' / undefined leave the directive untouched (today's
+ * behavior), so the renderer sees no change unless we have a real signal.
+ */
+function fadeDirective(move: CoachingMove, level?: ReflectorLevel): string {
+  const base = MOVES[move].directive;
+  if (level === 'advanced') {
+    return `${base} This learner has a track record of deep, critical reflection across prior sessions, so keep the prompt brief and peer-to-peer; trust them to go deep with minimal scaffolding and do not over-explain.`;
+  }
+  if (level === 'novice') {
+    return `${base} This learner is early in building reflective habits, so make the prompt concrete, small, and warmly supportive; reduce the cognitive load rather than adding to it.`;
+  }
+  return base;
 }
 
 /**
@@ -356,10 +396,20 @@ export function selectMove(state: CoachingState): SelectedMove {
   const depthRequired = state.phase === 'awareness' || state.phase === 'alternatives';
   if (depthRequired && c.cues.shallow) {
     const shallowRun = (state.consecutiveShallow ?? 0) + 1; // incl. current turn
-    if (shallowRun >= 2) {
-      return mk('SCAFFOLD_WITH_STEM', state.phase, 'repeated_shallow_needs_scaffold');
+    // Faded scaffolding: the heavy move (a sentence stem) is delayed for a
+    // learner with a track record of deep reflection — give them another open
+    // probe first — and reached sooner for a novice who needs support earlier.
+    const stemAt = scaffoldThreshold(state.reflectorLevel);
+    if (shallowRun >= stemAt) {
+      return mk(
+        'SCAFFOLD_WITH_STEM', state.phase, 'repeated_shallow_needs_scaffold',
+        fadeDirective('SCAFFOLD_WITH_STEM', state.reflectorLevel),
+      );
     }
-    return mk('DEEPEN_REFLECTION', state.phase, 'shallow_turn_needs_depth');
+    return mk(
+      'DEEPEN_REFLECTION', state.phase, 'shallow_turn_needs_depth',
+      fadeDirective('DEEPEN_REFLECTION', state.reflectorLevel),
+    );
   }
 
   // 4) Default: the move for the current phase, then advance one step.
@@ -496,6 +546,7 @@ export interface RunInput {
   budgetMs?: number;
   consecutiveShallow?: number;
   coveredTags?: ContentTag[];
+  reflectorLevel?: ReflectorLevel;
 }
 
 export interface RunResult extends SelectedMove {
@@ -514,6 +565,7 @@ export function runCoachingTurn(input: RunInput): RunResult {
     classified,
     consecutiveShallow: input.consecutiveShallow,
     coveredTags: input.coveredTags,
+    reflectorLevel: input.reflectorLevel,
   };
   const selected = selectMove(state);
   return { ...selected, classified };
