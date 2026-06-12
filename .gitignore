@@ -25,3 +25,7 @@ dist-ssr
 
 # Cloudflare wrangler local state
 .wrangler/
+
+# local env (build-time secrets)
+.env
+.env.*

@@ -37,7 +37,12 @@ interface Env {
     VITE_HUGGINGFACE_API_KEY?: string;
     VITE_SUPABASE_URL?: string;
     VITE_SUPABASE_ANON_KEY?: string;
+    // Cloudflare Workers AI binding — used as a keyless fallback for chat when no
+    // Gemini key is configured, so a fresh deploy is never a broken chat.
+    AI?: { run: (model: string, opts: any) => Promise<any> };
 }
+
+const WORKERS_AI_MODEL = '@cf/meta/llama-3.1-8b-instruct';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const ALLOWED_GEMINI_MODELS = new Set(['gemini-2.5-flash']);
@@ -188,6 +193,74 @@ async function streamGemini(model: string, contents: Content[], systemInstructio
     });
 }
 
+function streamPlainText(text: string): Response {
+    const encoder = new TextEncoder();
+    const words = text.split(/(\s+)/);
+    let i = 0;
+    const readable = new ReadableStream({
+        pull(controller) {
+            if (i >= words.length) { controller.close(); return; }
+            controller.enqueue(encoder.encode(words[i++]));
+        },
+    });
+    return new Response(readable, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
+}
+
+const FALLBACK_BUSY = "I'm having trouble reaching my language model right now. Please try sending that again in a moment.";
+
+/**
+ * Keyless chat fallback on Cloudflare Workers AI. Used ONLY when no Gemini key
+ * is configured, so the conversation (and the closing report) still works on a
+ * fresh deploy. The deterministic coaching directive is already in the message,
+ * so an open model renders each move faithfully. Prefers Gemini whenever its
+ * key exists (see the gemini-chat branch).
+ */
+async function streamWorkersAi(contents: Content[], systemInstruction: string | undefined, env: Env): Promise<Response> {
+    if (!env.AI) return streamPlainText(FALLBACK_BUSY);
+    const messages = [
+        ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
+        ...contents.map((c) => ({ role: c.role === 'model' ? 'assistant' : 'user', content: c.parts[0]?.text || '' })),
+    ];
+    try {
+        const upstream: any = await env.AI.run(WORKERS_AI_MODEL, { messages, stream: true, max_tokens: 768 });
+        const body: ReadableStream<Uint8Array> | undefined = upstream?.body || upstream;
+        if (!body || typeof (body as any).getReader !== 'function') {
+            return streamPlainText(typeof upstream?.response === 'string' ? upstream.response : FALLBACK_BUSY);
+        }
+        const reader = (body as ReadableStream<Uint8Array>).getReader();
+        const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
+        let buffer = '';
+        let emitted = false;
+        const readable = new ReadableStream({
+            async pull(controller) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    if (!emitted) controller.enqueue(encoder.encode(FALLBACK_BUSY));
+                    controller.close();
+                    return;
+                }
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                    const t = line.trim();
+                    if (!t.startsWith('data:')) continue;
+                    const payload = t.slice(5).trim();
+                    if (!payload || payload === '[DONE]') continue;
+                    try {
+                        const delta = JSON.parse(payload)?.response;
+                        if (delta) { emitted = true; controller.enqueue(encoder.encode(delta)); }
+                    } catch { /* partial json across chunks */ }
+                }
+            },
+        });
+        return new Response(readable, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
+    } catch {
+        return streamPlainText(FALLBACK_BUSY);
+    }
+}
+
 async function generateGeminiJson(model: string, contents: Content[], cfg: any, key: string): Promise<Response> {
     const generationConfig: any = {};
     if (typeof cfg.temperature === 'number') generationConfig.temperature = cfg.temperature;
@@ -231,7 +304,6 @@ export const onRequestPost = async (context: { request: Request; env: Env }): Pr
     if (!allowed) return json(429, { error: 'rate_limited' });
 
     if (kind === 'gemini-chat' || kind === 'gemini-json') {
-        if (!GEMINI_KEY) return json(503, { error: 'gemini_key_not_configured' });
         const model = String(body?.model || 'gemini-2.5-flash');
         if (!ALLOWED_GEMINI_MODELS.has(model)) return json(400, { error: 'model_not_allowed' });
         const contents = sanitizeContents(body?.contents);
@@ -239,8 +311,15 @@ export const onRequestPost = async (context: { request: Request; env: Env }): Pr
 
         if (kind === 'gemini-chat') {
             const systemInstruction = typeof body?.systemInstruction === 'string' ? body.systemInstruction : undefined;
-            return streamGemini(model, contents, systemInstruction, GEMINI_KEY);
+            // Prefer Gemini; with no key, fall back to keyless Workers AI so the
+            // conversation still works (never a broken chat on a fresh deploy).
+            return GEMINI_KEY
+                ? streamGemini(model, contents, systemInstruction, GEMINI_KEY)
+                : streamWorkersAi(contents, systemInstruction, context.env);
         }
+        // gemini-json drives best-effort research extraction only; if there is no
+        // Gemini key it degrades to a no-op (the caller already tolerates this).
+        if (!GEMINI_KEY) return json(503, { error: 'gemini_key_not_configured' });
         const cfg = body?.config && typeof body.config === 'object' ? body.config : {};
         return generateGeminiJson(model, contents, cfg, GEMINI_KEY);
     }
