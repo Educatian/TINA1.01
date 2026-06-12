@@ -152,13 +152,47 @@ class QueryBuilder<T = any> implements PromiseLike<{ data: T; error: { message: 
 }
 
 // ---- presence channel (no-op until Durable Objects) ------------------------
-function makeChannel() {
+type PresenceCallback = (payload: { event: string }) => void;
+
+function makeChannel(name: string) {
+    let ws: WebSocket | null = null;
+    let presence: Record<string, unknown[]> = {};
+    const syncHandlers: PresenceCallback[] = [];
+
     const channel = {
-        on() { return channel; },
-        subscribe(cb?: (status: string) => void) { if (cb) setTimeout(() => cb('SUBSCRIBED'), 0); return channel; },
+        // .on('presence', { event: 'sync' }, cb)
+        on(type: string, _filter: unknown, cb?: PresenceCallback) {
+            if (type === 'presence' && cb) syncHandlers.push(cb);
+            return channel;
+        },
+        subscribe(cb?: (status: string) => void) {
+            try {
+                const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                const url = `${proto}://${window.location.host}/api/presence`
+                    + `?channel=${encodeURIComponent(name)}&token=${encodeURIComponent(getToken())}`;
+                ws = new WebSocket(url);
+                ws.onopen = () => cb?.('SUBSCRIBED');
+                ws.onmessage = (e) => {
+                    try {
+                        const m = JSON.parse(e.data);
+                        if (m?.type === 'sync') {
+                            presence = m.presence || {};
+                            syncHandlers.forEach((h) => h({ event: 'sync' }));
+                        }
+                    } catch { /* ignore malformed frames */ }
+                };
+                ws.onerror = () => cb?.('CHANNEL_ERROR');
+            } catch {
+                cb?.('CHANNEL_ERROR');
+            }
+            return channel;
+        },
+        // The DO counts us from the authenticated connection, so track/untrack
+        // are no-ops kept for supabase-API compatibility.
         track: async () => ({}),
         untrack: async () => ({}),
-        presenceState: () => ({}),
+        presenceState: () => presence,
+        _close() { try { ws?.close(); } catch { /* ignore */ } ws = null; },
     };
     return channel;
 }
@@ -205,8 +239,8 @@ export const cfClient = {
         },
     },
 
-    channel: (_name: string, _opts?: unknown) => makeChannel(),
-    removeChannel: async (_ch: unknown) => ({}),
+    channel: (name: string, _opts?: unknown) => makeChannel(name),
+    removeChannel: async (ch: any) => { try { ch?._close?.(); } catch { /* ignore */ } return {}; },
 };
 
 export type CfClient = typeof cfClient;

@@ -9,6 +9,15 @@ export interface Env {
     // Static assets binding (Cloudflare Pages provides env.ASSETS)
     ASSETS: { fetch: (req: Request) => Promise<Response> };
     ADMIN_EMAILS?: string;
+    // Durable Object namespace for live presence (see presence.ts)
+    PRESENCE: DurableObjectNamespace;
+}
+
+export interface DurableObjectId { toString(): string; }
+export interface DurableObjectStub { fetch(req: Request): Promise<Response>; }
+export interface DurableObjectNamespace {
+    idFromName(name: string): DurableObjectId;
+    get(id: DurableObjectId): DurableObjectStub;
 }
 
 // Minimal D1 types (avoids a @cloudflare/workers-types dependency at build time)

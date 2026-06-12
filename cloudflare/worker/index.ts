@@ -10,9 +10,13 @@
    ========================================================================== */
 
 import type { Env } from './types';
-import { authUser, hashPassword, verifyPassword, signJwt } from './auth';
+import { authUser, hashPassword, verifyPassword, signJwt, verifyJwt } from './auth';
 import { runDataOp, DataError, type DataOp } from './data';
 import { handleAi } from './ai';
+import { PresenceRoom } from './presence';
+
+// Durable Object class must be exported from the Worker entry for Pages.
+export { PresenceRoom };
 
 const RATE_LIMIT_PER_HOUR = 900;
 
@@ -115,6 +119,22 @@ export default {
                     return json(429, { error: 'rate_limited' });
                 }
                 return await handleAi(body, env);
+            }
+
+            // live presence: WebSocket upgrade -> per-channel Durable Object.
+            // The browser can't set headers on the handshake, so the JWT comes
+            // in as ?token=; we verify it, then forward to the room with ?uid=.
+            if (pathname === '/api/presence') {
+                if (req.headers.get('Upgrade') !== 'websocket') return json(426, { error: 'expected_websocket' });
+                const token = url.searchParams.get('token') || '';
+                const claims = token ? await verifyJwt(token, env.JWT_SECRET, nowSec()) : null;
+                if (!claims) return json(401, { error: 'unauthorized' });
+                const channel = url.searchParams.get('channel') || 'default';
+                const id = env.PRESENCE.idFromName(channel);
+                const stub = env.PRESENCE.get(id);
+                const forward = new URL(req.url);
+                forward.searchParams.set('uid', claims.sub);
+                return stub.fetch(new Request(forward.toString(), req));
             }
 
             // static assets + SPA fallback
