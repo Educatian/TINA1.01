@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 // dynamically imported inside each download handler so visiting /account does
 // not pay for an export the user may never trigger.
 import { useAuth } from '../hooks/useAuth';
-import { getUserSessions } from '../hooks/useSession';
+import { getUserSessions, deleteUserSessions } from '../hooks/useSession';
 import { ReflectionJourney } from './ReflectionJourney';
 import { LearnerInsights } from './LearnerInsights';
 import { CollapsibleSection } from './CollapsibleSection';
@@ -25,6 +25,9 @@ export function MyAccount() {
     const [feedbackBySession, setFeedbackBySession] = useState<Record<string, SessionFeedback>>({});
     const [requestingId, setRequestingId] = useState<string | null>(null);
     const [showAllSessions, setShowAllSessions] = useState(false);
+    const [selectMode, setSelectMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [deleting, setDeleting] = useState(false);
     const chatViewRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -215,6 +218,50 @@ export function MyAccount() {
         });
     };
 
+    const toggleSelected = (sessionId: string) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(sessionId)) next.delete(sessionId);
+            else next.add(sessionId);
+            return next;
+        });
+    };
+
+    const exitSelectMode = () => {
+        setSelectMode(false);
+        setSelectedIds(new Set());
+    };
+
+    const handleDeleteSelected = async () => {
+        if (!user || selectedIds.size === 0 || deleting) return;
+        const count = selectedIds.size;
+        const ok = window.confirm(
+            `Delete ${count} ${count === 1 ? 'session' : 'sessions'}?\n\n` +
+            'This permanently removes the selected conversations, their reflection reports, and their telemetry. This cannot be undone.',
+        );
+        if (!ok) return;
+        setDeleting(true);
+        const result = await deleteUserSessions(user.id, [...selectedIds]);
+        setDeleting(false);
+        if (result.error) {
+            window.alert(`Could not delete: ${result.error}`);
+            return;
+        }
+        if (result.deleted === 0) {
+            window.alert('Could not delete — the server has not enabled session deletion yet. (Admin: apply tina-session-delete.sql in the Supabase SQL Editor.)');
+            return;
+        }
+        // Drop anything that referenced a deleted session, then re-sync.
+        if (selectedSession && selectedIds.has(selectedSession.id)) setSelectedSession(null);
+        if (viewingChat && selectedIds.has(viewingChat.id)) setViewingChat(null);
+        setSessions((prev) => prev.filter((s) => !selectedIds.has(s.id)));
+        exitSelectMode();
+        if (result.deleted < count) {
+            window.alert(`Deleted ${result.deleted} of ${count} — the rest could not be removed. Refresh and try again.`);
+            void loadSessions();
+        }
+    };
+
     const handleSignOut = async () => {
         await signOut();
         navigate('/login');
@@ -281,9 +328,44 @@ export function MyAccount() {
                 summary={`${sessions.length} ${sessions.length === 1 ? 'session' : 'sessions'}`}
                 defaultOpen
             >
-                <p style={{ color: '#6b7280', marginBottom: '20px' }}>
-                    Revisit past conversations, continue unfinished ones, or keep a copy of your work.
-                </p>
+                <div className="sessions-toolbar">
+                    <p style={{ color: '#6b7280', margin: 0 }}>
+                        Revisit past conversations, continue unfinished ones, or keep a copy of your work.
+                    </p>
+                    {sessions.length > 0 && !selectMode && (
+                        <button className="btn btn-secondary sessions-select-toggle" onClick={() => setSelectMode(true)}>
+                            Select
+                        </button>
+                    )}
+                </div>
+
+                {selectMode && (
+                    <div className="session-select-bar" role="toolbar" aria-label="Session selection">
+                        <span className="select-count">
+                            {selectedIds.size} selected
+                        </span>
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => setSelectedIds(
+                                selectedIds.size === sessions.length
+                                    ? new Set()
+                                    : new Set(sessions.map((s) => s.id)),
+                            )}
+                        >
+                            {selectedIds.size === sessions.length ? 'Clear all' : `Select all ${sessions.length}`}
+                        </button>
+                        <button
+                            className="btn btn-danger"
+                            disabled={selectedIds.size === 0 || deleting}
+                            onClick={handleDeleteSelected}
+                        >
+                            {deleting ? 'Deleting…' : `Delete${selectedIds.size ? ` (${selectedIds.size})` : ''}`}
+                        </button>
+                        <button className="btn btn-secondary" onClick={exitSelectMode} disabled={deleting}>
+                            Done
+                        </button>
+                    </div>
+                )}
 
                 {loading ? (
                     <p>Loading your sessions…</p>
@@ -296,8 +378,17 @@ export function MyAccount() {
                     </div>
                 ) : (
                     <div className="sessions-list">
-                        {(showAllSessions ? sessions : sessions.slice(0, RECENT_SESSION_COUNT)).map((session) => (
-                            <div key={session.id} className="session-card">
+                        {(showAllSessions || selectMode ? sessions : sessions.slice(0, RECENT_SESSION_COUNT)).map((session) => (
+                            <div key={session.id} className={`session-card ${selectMode && selectedIds.has(session.id) ? 'session-card-selected' : ''}`}>
+                                {selectMode && (
+                                    <input
+                                        type="checkbox"
+                                        className="session-check"
+                                        checked={selectedIds.has(session.id)}
+                                        onChange={() => toggleSelected(session.id)}
+                                        aria-label={`Select session from ${new Date(session.created_at).toLocaleDateString()}`}
+                                    />
+                                )}
                                 <div className="session-info">
                                     <h3>
                                         {session.completed_at ? 'Completed reflection' : 'In-progress reflection'} on{' '}
@@ -369,7 +460,7 @@ export function MyAccount() {
                                 )}
                             </div>
                         ))}
-                        {sessions.length > RECENT_SESSION_COUNT && (
+                        {sessions.length > RECENT_SESSION_COUNT && !selectMode && (
                             <button
                                 className="btn btn-secondary show-all-sessions"
                                 onClick={() => setShowAllSessions((v) => !v)}

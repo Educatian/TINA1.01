@@ -261,8 +261,10 @@ Security notes:
   `tina-api-proxy.sql` (rate limit), `tina-reflection-loop.sql` (carry-forward),
   `tina-artifact-anchor.sql` (persist the reflection artifact across resume),
   `tina-jol.sql` (judgment-of-learning), `tina-instructor-feedback.sql`,
-  `tina-experiment.sql` (RCT arm). All additive, idempotent, RLS-scoped; the app
-  feature-detects any that are unapplied and falls back gracefully.
+  `tina-experiment.sql` (RCT arm), `tina-session-delete.sql` (lets learners
+  bulk-delete their own sessions from My Account). All additive, idempotent,
+  RLS-scoped; the app feature-detects any that are unapplied and falls back
+  gracefully.
 
 ---
 

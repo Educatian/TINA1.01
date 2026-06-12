@@ -2150,6 +2150,73 @@ body {
   margin-top: 4px;
 }
 
+/* ---- session multi-select ---- */
+.sessions-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.sessions-select-toggle {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+}
+
+.session-select-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: #FDF8E8;
+  border: 1px solid #f0e68c;
+  border-radius: var(--radius-md);
+}
+
+.session-select-bar .btn {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+
+.select-count {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+  margin-right: auto;
+}
+
+.session-check {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: #B7950B;
+  cursor: pointer;
+}
+
+.session-card-selected {
+  background: #FDF8E8;
+  border-left-color: #B7950B;
+}
+
+.btn-danger {
+  background: #C0392B;
+  color: #fff;
+  border: none;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #A93226;
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .session-actions .btn {
   padding: 6px 12px;
   font-size: 0.82rem;

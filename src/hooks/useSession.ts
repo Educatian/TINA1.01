@@ -123,6 +123,34 @@ export async function getUserSessions(userId: string): Promise<Session[]> {
     return data as Session[];
 }
 
+/* Bulk-delete the learner's OWN sessions (My Account multi-select).
+   Children created by the repo migrations (coaching_turns, session_feedback,
+   experiment_assignments, reflection signals/summaries) ride the FK cascade;
+   the two legacy tables (session_analytics, session_outputs) are cleared
+   best-effort FIRST in case their FKs predate "on delete cascade".
+   Returns how many session rows were actually removed — 0 with no error means
+   RLS has no DELETE policy yet (apply tina-session-delete.sql). */
+export async function deleteUserSessions(
+    userId: string,
+    sessionIds: string[],
+): Promise<{ deleted: number; error: string | null }> {
+    if (sessionIds.length === 0) return { deleted: 0, error: null };
+    try {
+        await supabase.from('session_analytics').delete().in('session_id', sessionIds);
+    } catch { /* legacy table may be absent or read-only — cascade may still cover it */ }
+    try {
+        await supabase.from('session_outputs').delete().in('session_id', sessionIds).eq('user_id', userId);
+    } catch { /* same */ }
+    const { data, error } = await supabase
+        .from('sessions')
+        .delete()
+        .in('id', sessionIds)
+        .eq('user_id', userId)
+        .select('id');
+    if (error) return { deleted: 0, error: error.message };
+    return { deleted: data?.length ?? 0, error: null };
+}
+
 export async function getAllSessions(): Promise<Session[]> {
     const { data, error } = await supabase
         .from('sessions')
