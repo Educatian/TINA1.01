@@ -780,12 +780,18 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             }
 
             if (sessionIdRef.current) {
-                try {
-                    const turnAnalytics = await analyzeUserTurn(newTurnCount, userMsg.text, userResponseTimeMs);
-                    await saveTurnAnalytics(sessionIdRef.current, turnAnalytics);
-                } catch (analyticsErr) {
-                    console.warn('Analytics failed (non-blocking):', analyticsErr);
-                }
+                // Per-turn NLP analytics (6 HuggingFace calls) are for the
+                // dashboard, not the conversation — run them in the background so
+                // they never delay the next turn / re-enabling input.
+                const analyticsSessionId = sessionIdRef.current;
+                void (async () => {
+                    try {
+                        const turnAnalytics = await analyzeUserTurn(newTurnCount, userMsg.text, userResponseTimeMs);
+                        await saveTurnAnalytics(analyticsSessionId, turnAnalytics);
+                    } catch (analyticsErr) {
+                        console.warn('Analytics failed (non-blocking):', analyticsErr);
+                    }
+                })();
 
                 const plannedShallow = coachingPlan?.classified.cues.shallow ?? false;
                 void extractAndSaveTurnResearchSignal({
