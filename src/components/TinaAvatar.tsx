@@ -12,7 +12,9 @@ import React from 'react';
    signal that shapes the LLM reply also picks the avatar's stance.
    ========================================================================== */
 
-export type TinaAvatarState = 'idle' | 'thinking' | 'listening' | 'walking' | 'celebrating';
+export type TinaAvatarState =
+    | 'idle' | 'thinking' | 'listening' | 'walking' | 'celebrating'
+    | 'sitting' | 'looking' | 'waving' | 'reading';
 
 const STATE_ALT: Record<TinaAvatarState, string> = {
     idle: 'TINA standing ready',
@@ -20,6 +22,10 @@ const STATE_ALT: Record<TinaAvatarState, string> = {
     listening: 'TINA listening attentively',
     walking: 'TINA walking',
     celebrating: 'TINA celebrating your reflection',
+    sitting: 'TINA sitting',
+    looking: 'TINA looking around',
+    waving: 'TINA waving hello',
+    reading: 'TINA reading her notebook',
 };
 
 /** Map a coaching move to the avatar stance shown while TINA replies. */

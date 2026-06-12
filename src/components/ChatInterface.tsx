@@ -50,6 +50,7 @@ const ReportModal = lazy(() => import('./ReportModal').then((m) => ({ default: m
 import { QuickReply, QuickReplyQuestion, detectQuickReply } from './QuickReply';
 import { ProgressBar } from './ProgressBar';
 import { TinaAvatar, avatarStateForMove, type TinaAvatarState } from './TinaAvatar';
+import { TinaIdleCompanion } from './TinaIdleCompanion';
 import { MarkdownLite } from './MarkdownLite';
 import { Onboarding } from './Onboarding';
 import { onboardingSeenKey } from '../services/onboardingScript';
@@ -1087,8 +1088,8 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                 <div className="chat-messages">
                     {messages.length === 0 && (
                         <div className="chat-empty-state">
-                            <TinaAvatar state="walking" height={150} />
-                            <p>TINA is on her way to meet you...</p>
+                            <TinaIdleCompanion height={170} drift={64} />
+                            <p>TINA is getting settled, say hello whenever you're ready.</p>
                         </div>
                     )}
                     {messages.map((msg, idx) => (

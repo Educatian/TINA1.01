@@ -148,7 +148,6 @@ export function Login() {
                                 <strong>Check your email</strong>
                                 <p>If an account exists for <em>{email}</em>, a reset link is on its way. It expires in about an hour.</p>
                             </div>
-                            <button type="button" className="btn btn-secondary" onClick={backToSignIn}>Back to sign in</button>
                         </div>
                     ) : (
                         <form className="login-form" onSubmit={handleForgot}>
