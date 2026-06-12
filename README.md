@@ -51,6 +51,93 @@ For the structured activity customization model that keeps one shared chatbot wh
 | 🎤 **Voice Input** | Speech-to-text for natural conversation |
 | 🧍 **TINA Character States** | Full-body avatar (idle/thinking/listening/walking/celebrating) driven by the selected coaching move; calm micro-motion, `prefers-reduced-motion` respected |
 | 🧭 **Coaching-Move Engine** | Deterministic per-turn coaching moves (Korthagen ALACT + reflection levels) that steer the LLM *and* log research telemetry |
+| 📎 **Artifact-Anchored Reflection** | Learners attach a real teaching artifact (lesson plan, student work, the AI prompt they used, or a link) and TINA grounds the whole conversation *on* it — evidence-based reflection, not abstract |
+| 🪜 **Faded / Adaptive Scaffolding** | Scaffolding intensity fades by demonstrated reflective maturity (read from prior-session depth): advanced reflectors earn lighter, later prompts; novices get earlier, warmer support |
+
+---
+
+## 🗺️ Architecture & Flow Map
+
+### System architecture
+
+How a learner turn travels from the browser, through the key-safe AI proxy, to the model providers and back — with Supabase as the auth + data + presence backbone. AI keys never reach the browser bundle.
+
+```mermaid
+flowchart TB
+  subgraph Browser["🖥️ Browser — React + TypeScript + Vite (installable PWA)"]
+    UI["ChatInterface.tsx<br/>conversation UI + streaming"]
+    ENG["coachingEngine.ts<br/>classify → select → verify (pure)"]
+    ART["artifactService.ts<br/>build artifact anchor (pure)"]
+    LOOP["reflectionLoop / reflectionScoring<br/>cross-session loop + depth → reflector level"]
+    UI --> ENG
+    UI --> ART
+    UI --> LOOP
+  end
+
+  subgraph Edge["☁️ Netlify Function — ai-proxy.mts (server-side, keys live here)"]
+    PROXY["Supabase-JWT auth<br/>+ per-user rate limit"]
+  end
+
+  subgraph Models["🤖 Model providers"]
+    GEM["Gemini 2.5 Flash<br/>chat renderer (streamed)"]
+    HF["HuggingFace Inference<br/>affect / NLP analytics"]
+  end
+
+  subgraph Supa["🗄️ Supabase"]
+    AUTH["Auth"]
+    DB[("Postgres + RLS<br/>sessions · coaching_turns · artifact_context<br/>reflection_carryforward · session_feedback")]
+    RT["Realtime presence"]
+  end
+
+  UI -- "access token" --> AUTH
+  ENG -- "directive + artifact anchor + history" --> PROXY
+  PROXY --> GEM
+  PROXY --> HF
+  UI -- "read/write (owner-scoped)" --> DB
+  UI <-. "who-else-is-here" .-> RT
+  LOOP -- "prior depth + One Next Move" --> DB
+
+  classDef edge fill:#FDF8E8,stroke:#F0E68C,color:#2C3E50;
+  classDef model fill:#FFFDF5,stroke:#E8D98A,color:#2C3E50;
+  class PROXY edge;
+  class GEM,HF model;
+```
+
+> A keyless, instantly-playable mirror of the app also runs all-Cloudflare (Pages + Worker + D1 + Workers AI) at **[tina-7kw.pages.dev](https://tina-7kw.pages.dev)** for the public demo.
+
+### Per-turn reflection flow
+
+Every learner turn runs the pure `classify → select → verify` pipeline. The two newest capabilities sit right in this path: the **artifact anchor** is injected before the move directive, and **faded scaffolding** branches the shallow-turn escalation on the learner's `reflectorLevel`.
+
+```mermaid
+flowchart TD
+  A["Learner turn"] --> B{"Artifact attached?"}
+  B -- yes --> C["buildArtifactDirective()<br/>inject 'reflect ON this' anchor"]
+  B -- no --> D["classifyTurn()<br/>reflection level · content tags · cues"]
+  C --> D
+  D --> E["selectMove()"]
+  E --> F{"Shallow turn at an<br/>awareness / alternatives phase?"}
+  F -- "no" --> J["Phase move<br/>ELICIT · LOOK_BACK · NAME_ESSENTIAL · REFRAME · CONNECT"]
+  F -- "yes" --> G{"reflectorLevel<br/>(from prior sessions)"}
+  G -- "advanced" --> H["Extra open DEEPEN probe first<br/>sentence stem only at 3rd shallow"]
+  G -- "novice / developing" --> I["SCAFFOLD_WITH_STEM at 2nd shallow"]
+  J --> K["LLM render via AI proxy (streamed)"]
+  H --> K
+  I --> K
+  K --> L{"verifyRender()<br/>mirror, not advisor"}
+  L -- "violation" --> M["one nudged regeneration"]
+  L -- "ok" --> N["saveCoachingTurn() → coaching_turns<br/>(move log = research event)"]
+  M --> N
+  N --> O{"End of ~10-min / 12-turn budget?"}
+  O -- "no" --> A
+  O -- "yes" --> P["CLOSE_SYNTHESIS<br/>report grounded in the learner's own words"]
+  P --> Q["One Next Move + carry-forward question<br/>↻ seeds the next session & reflector level"]
+
+  classDef new fill:#FDF8E8,stroke:#D4AC0D,color:#2C3E50,stroke-width:2px;
+  class C,G,H new;
+```
+
+The closing report's **One Next Move** becomes the next session's opening Action, and the learner's accumulated per-turn depth feeds `reflectorLevelFromHistory()` — so the cycle (and the scaffolding fade) compounds across sessions.
 
 ---
 
@@ -69,14 +156,14 @@ TINA includes a **pure, unit-tested coaching engine** (`src/services/coachingEng
 | `LOOK_BACK` | Looking back | What happened / was wanted / felt / done |
 | `NAME_ESSENTIAL` | Awareness | Name the identity / value / AI tension underneath |
 | `DEEPEN_REFLECTION` | Awareness | Push descriptive → critical when a turn stays shallow |
-| `SCAFFOLD_WITH_STEM` | Awareness | After 2+ consecutive shallow turns, offer a sentence stem instead of another open why-probe |
+| `SCAFFOLD_WITH_STEM` | Awareness | After repeated shallow turns, offer a sentence stem instead of another open why-probe (threshold **fades by reflector level**: 2nd shallow for novice/developing, 3rd for advanced) |
 | `REFRAME_PERSPECTIVE` | Creating alternatives | Invite an alternative framing |
 | `CONNECT_VALUE_TO_ACTION` | Trial | Connect the value to one small next move to try |
 | `AFFIRM_AND_HOLD` | Looking back | Validate + hold a safe, low-confusion space |
 | `CLOSE_SYNTHESIS` | Closing | End-of-session TINA Reflection Report |
 
 - **Classify** (`classifyTurn`): lightweight, LLM-free heuristics → `{reflectionLevel, contentTags, cues}`.
-- **Select** (`selectMove`): one move per turn; advances the ALACT cycle and lands `CLOSE_SYNTHESIS` near the ~10-minute / 12-turn budget; deepens shallow turns; holds the space on affect.
+- **Select** (`selectMove`): one move per turn; advances the ALACT cycle and lands `CLOSE_SYNTHESIS` near the ~10-minute / 12-turn budget; deepens shallow turns; holds the space on affect. **Faded scaffolding:** when an artifact is attached its anchor is injected first, and the shallow→stem escalation threshold fades by the learner's `reflectorLevel` (derived from prior-session depth via `reflectorLevelFromHistory`).
 - **Verify** (`verifyRender`): a "mirror, not advisor" guard. On a violation, one nudged regeneration, else pass-through — never blocks the live class.
 
 **Per-turn telemetry** is logged via `analyticsService.saveCoachingTurn(...)` into the `coaching_turns` table (the move log *is* the analytics data; no parallel pipeline). It is **best-effort and feature-detected**: with the SQL not applied or the engine disabled/erroring, the chat behaves exactly as before.
@@ -87,7 +174,7 @@ TINA includes a **pure, unit-tested coaching engine** (`src/services/coachingEng
   - `rct` — deterministic **50/50 split** bucketed by a stable hash of `user_id` (same learner, same arm across sessions). See `src/services/experimentAssignment.ts`.
 - **Schema:** apply `tina-coaching-telemetry.sql` (move log) and `tina-experiment.sql` (per-session arm assignment) in the Supabase SQL Editor (idempotent, additive-only, RLS = per-user + instructor-read). The Admin Dashboard **Coaching Moves** tab shows reflection-level distribution, move-usage frequency, ALACT phase coverage, per-learner trajectory, a **lexical-vs-Gemini classifier-agreement matrix** (measurement validity), and CSV/JSON export — with a clean "not enabled" state until the SQL is applied.
 - **Research data dictionary:** every research table/field + suggested analyses are documented in [docs/research-data-dictionary.md](./docs/research-data-dictionary.md) for OSF preregistration/sharing.
-- **Tests:** `npm test` (Node ≥ 22 `node --test`, 40 cases: classify/select/verify, every move reachable, shallow → `DEEPEN_REFLECTION` → `SCAFFOLD_WITH_STEM`, end-of-time → `CLOSE_SYNTHESIS`, grounding excerpts, and RCT assignment determinism/balance).
+- **Tests:** `npm test` (Node ≥ 22 `node --test`, 67 cases: classify/select/verify, every move reachable, shallow → `DEEPEN_REFLECTION` → `SCAFFOLD_WITH_STEM`, faded-scaffolding thresholds + reflector-level mapping, artifact-anchor directive grammar, end-of-time → `CLOSE_SYNTHESIS`, grounding excerpts, and RCT assignment determinism/balance).
 
 ---
 
@@ -168,7 +255,11 @@ Security notes:
 - Existing Netlify sites keep working without dashboard changes: the function
   falls back to the legacy `VITE_`-prefixed env values server-side.
 - Optional migrations: `tina-coaching-telemetry.sql` (move telemetry),
-  `tina-api-proxy.sql` (rate limit), `tina-reflection-loop.sql` (carry-forward).
+  `tina-api-proxy.sql` (rate limit), `tina-reflection-loop.sql` (carry-forward),
+  `tina-artifact-anchor.sql` (persist the reflection artifact across resume),
+  `tina-jol.sql` (judgment-of-learning), `tina-instructor-feedback.sql`,
+  `tina-experiment.sql` (RCT arm). All additive, idempotent, RLS-scoped; the app
+  feature-detects any that are unapplied and falls back gracefully.
 
 ---
 
@@ -183,11 +274,15 @@ src/
 │   ├── ProgressBar.tsx      # Session progress indicator
 │   └── QuickReply.tsx       # Quick selection buttons
 ├── services/
+│   ├── coachingEngine.ts    # Pure classify → select → verify (ALACT + faded scaffolding)
+│   ├── artifactService.ts   # Artifact-anchored reflection (pure directive grammar)
+│   ├── reflectionLoop.ts    # Cross-session loop + reflector-level (data access)
+│   ├── reflectionScoring.ts # Pure depth scoring / JOL / reflector-level mapping
 │   ├── nlpService.ts        # HuggingFace NLP integration
-│   └── analyticsService.ts  # Affect-aware logging
+│   └── analyticsService.ts  # Affect-aware + coaching-move logging
 ├── hooks/
 │   ├── useAuth.ts           # Authentication hook
-│   └── useSession.ts        # Session management
+│   └── useSession.ts        # Session management + artifact persistence
 └── types/
     └── index.ts             # TypeScript definitions
 ```
