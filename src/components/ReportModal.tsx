@@ -10,6 +10,7 @@ import {
 import { saveJol } from '../services/analyticsService';
 import { requestInstructorFeedback } from '../services/feedbackService';
 import { TinaAvatar } from './TinaAvatar';
+import { ValuesConstellation } from './ValuesConstellation';
 
 const JOL_OPTIONS: { band: DepthBand; label: string; hint: string }[] = [
     { band: 1, label: 'Mostly described what happened', hint: 'I shared the situation' },
@@ -354,6 +355,10 @@ export function ReportModal({ session, onClose, onNewSession }: ReportModalProps
                                         : 'You went deeper than you gave yourself credit for, do not undersell that.'}
                             </p>
                         </div>
+                    )}
+
+                    {reportRevealed && (
+                        <ValuesConstellation report={session.summary_report} />
                     )}
 
                     {reportRevealed && (
