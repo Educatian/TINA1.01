@@ -1,5 +1,6 @@
 import React from 'react';
 import { TinaAvatar } from './TinaAvatar';
+import { TinaIdleCompanion } from './TinaIdleCompanion';
 
 interface ProgressBarProps {
     currentTurn: number;
@@ -51,7 +52,9 @@ export function ProgressBar({ currentTurn, totalTurns = 12 }: ProgressBarProps) 
                     style={{ left: `calc(${progress}% - 13px)` }}
                     aria-hidden="true"
                 >
-                    <TinaAvatar state={isNearEnd ? 'celebrating' : 'walking'} height={34} />
+                    {isNearEnd
+                        ? <TinaAvatar state="celebrating" height={34} />
+                        : <TinaIdleCompanion inPlace height={34} />}
                 </span>
                 <div className="progress-bar-track">
                     <div

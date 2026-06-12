@@ -3560,11 +3560,11 @@ body {
 /* ---- TINA idle companion (varied behaviours: walk / sit / look / read) ---- */
 .tina-companion {
     position: relative;
-    display: flex;
+    display: inline-flex;
     align-items: flex-end;
     justify-content: center;
-    width: 100%;
 }
+.chat-empty-state .tina-companion { width: 100%; }
 .tina-companion-figure {
     transition: transform 4s ease-in-out;
     will-change: transform;

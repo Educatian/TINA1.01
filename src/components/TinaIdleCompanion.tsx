@@ -34,38 +34,56 @@ function prefersReducedMotion(): boolean {
     try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
 }
 
+// Compact in-place loop (no horizontal drift) — for small spots like the
+// progress bar, where the position is already meaningful (it tracks progress).
+const LOOP_INPLACE: Behaviour[] = [
+    { state: 'walking', dur: 3200 },
+    { state: 'idle', dur: 3000 },
+    { state: 'looking', dur: 3200 },
+    { state: 'thinking', dur: 3000 },
+    { state: 'reading', dur: 3600 },
+];
+
 interface TinaIdleCompanionProps {
     height?: number;
     /** horizontal drift amplitude for the walking step, px. */
     drift?: number;
+    /** stay in place (cycle poses, no horizontal drift). */
+    inPlace?: boolean;
+    /** override the behaviour loop. */
+    loop?: Behaviour[];
     className?: string;
 }
 
-export function TinaIdleCompanion({ height = 170, drift = 70, className = '' }: TinaIdleCompanionProps) {
+export function TinaIdleCompanion({ height = 170, drift = 70, inPlace = false, loop, className = '' }: TinaIdleCompanionProps) {
+    const seq = loop ?? (inPlace ? LOOP_INPLACE : LOOP);
     const [index, setIndex] = useState(0);
     const [pos, setPos] = useState(0); // current x, persists between walks
     const reduce = useRef(prefersReducedMotion());
 
     useEffect(() => {
         if (reduce.current) return; // static idle, no loop
-        const step = LOOP[index];
-        if (step.walk === 'right') setPos(drift);
-        else if (step.walk === 'left') setPos(-drift);
-        const t = window.setTimeout(() => setIndex((i) => (i + 1) % LOOP.length), step.dur);
+        const step = seq[index % seq.length];
+        if (!inPlace) {
+            if (step.walk === 'right') setPos(drift);
+            else if (step.walk === 'left') setPos(-drift);
+        }
+        const t = window.setTimeout(() => setIndex((i) => (i + 1) % seq.length), step.dur);
         return () => window.clearTimeout(t);
-    }, [index, drift]);
+    }, [index, drift, inPlace, seq]);
 
     if (reduce.current) {
         return <TinaAvatar state="idle" height={height} className={className} />;
     }
 
-    const b = LOOP[index];
-    const flip = b.walk === 'left'; // only mirror while walking left
+    const b = seq[index % seq.length];
+    const flip = !inPlace && b.walk === 'left'; // only mirror while roaming left
+    const translate = inPlace ? 0 : pos;
     return (
         <div className={`tina-companion ${className}`.trim()} style={{ height: `${height}px` }} aria-hidden="true">
             <div
-                className={`tina-companion-figure ${b.walk ? 'is-walking' : ''}`}
-                style={{ transform: `translateX(${pos}px) scaleX(${flip ? -1 : 1})` }}
+                className={`tina-companion-figure ${b.walk && !inPlace ? 'is-walking' : ''}`}
+                style={{ transform: `translateX(${translate}px) scaleX(${flip ? -1 : 1})` }}
             >
                 {/* key forces a remount so each behaviour gently fades in */}
                 <TinaAvatar key={`${index}-${b.state}`} state={b.state} height={height} />
