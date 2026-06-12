@@ -9,6 +9,7 @@ import { setRolePreview } from '../services/rolePreview';
 import { listFeedbackRequests, saveInstructorFeedback, type SessionFeedback } from '../services/feedbackService';
 import { ActivityConfigForm } from './ActivityConfigForm';
 import { InfoTip } from './InfoTip';
+import { UsageGuide } from './UsageGuide';
 import type { ActivityConfig, ActivityEnrollment, ActivityRecord, Session, SessionOutput } from '../types';
 
 // What each dashboard tab/section means + which data it holds. Surfaced as
@@ -204,6 +205,8 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState('');
   const [activeTab, setActiveTab] = useState<DashboardTab>('activity');
+  // Instructor guidebook (role-aware usage guide) opened from the header.
+  const [showGuide, setShowGuide] = useState(false);
   const [sessionAnalytics, setSessionAnalytics] = useState<SessionAnalyticsRecord[]>([]);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [activities, setActivities] = useState<ActivityRecord[]>([]);
@@ -867,6 +870,14 @@ export function AdminDashboard() {
           <p className="admin-brief-kicker">Admin workspace</p>
           <h1 className="admin-brief-title">TINA Dashboard</h1>
           <p className="admin-brief-copy">Compact monitoring for activities, learner progress, and research signals without forcing long page scans.</p>
+          <button
+            type="button"
+            className="btn btn-secondary admin-guide-button"
+            onClick={() => setShowGuide(true)}
+            title="Open the TINA instructor guidebook"
+          >
+            📘 Open the instructor guidebook
+          </button>
         </div>
         <div className="admin-brief-grid">
           {adminBriefCards.map((card) => (
@@ -1661,6 +1672,10 @@ export function AdminDashboard() {
             </tbody></table>
           </div>
         </div>
+      )}
+
+      {showGuide && (
+        <UsageGuide initialRole="instructor" onClose={() => setShowGuide(false)} />
       )}
     </div>
   );

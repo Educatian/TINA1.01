@@ -3911,3 +3911,13 @@ body {
 @media (prefers-reduced-motion: reduce) {
     .info-tip-bubble { transition: none; }
 }
+
+/* Instructor guidebook button in the dashboard header */
+.admin-guide-button {
+    margin-top: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
