@@ -3539,3 +3539,20 @@ body {
 .reset-sent-card p { margin: 0; font-size: 0.9rem; line-height: 1.5; }
 
 .login-card-centered { margin: auto; max-width: 440px; }
+
+/* prominent password reset CTA on the login (main) page */
+.btn-ghost.reset-cta {
+    display: block;
+    width: 100%;
+    margin: 12px 0 4px;
+    padding: 12px 16px;
+    background: #FCF3CF;
+    color: #2C3E50;
+    border: 1.5px solid #F0E68C;
+    border-radius: 12px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+.btn-ghost.reset-cta:hover { background: #F9E79F; border-color: #F4D03F; }

@@ -44,6 +44,13 @@ export function Login() {
         setResetError(null);
     };
 
+    const openForgot = () => {
+        setIsForgot(true);
+        setIsSignUp(false);
+        setResetSent(false);
+        setResetError(null);
+    };
+
     return (
         <div className="login-container">
             <div className="landing-hero">
@@ -195,7 +202,7 @@ export function Login() {
                             <div className="form-label-row">
                                 <label htmlFor="password">Password</label>
                                 {!isSignUp && (
-                                    <button type="button" className="forgot-link" onClick={() => { setIsForgot(true); setResetSent(false); setResetError(null); }}>
+                                    <button type="button" className="forgot-link" onClick={openForgot}>
                                         Forgot password?
                                     </button>
                                 )}
@@ -220,6 +227,12 @@ export function Login() {
                             {loading ? 'Loading…' : (isSignUp ? 'Sign Up' : 'Sign In')}
                         </button>
                     </form>
+                )}
+
+                {!isForgot && !isSignUp && (
+                    <button type="button" className="btn btn-ghost reset-cta" onClick={openForgot}>
+                        🔑 Reset or recover your password
+                    </button>
                 )}
 
                 <div className="login-toggle">
