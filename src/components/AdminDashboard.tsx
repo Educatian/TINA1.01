@@ -100,6 +100,26 @@ interface HumanCodingRecord {
 }
 type DashboardTab = 'activity' | 'overview' | 'analytics' | 'research' | 'moves' | 'review' | 'coding' | 'feedback' | 'users';
 
+// Map an emotion / AI-attitude label to one of the four progress-bar tone
+// classes (analytics-progress-{positive|warning|danger|info}). These were
+// referenced in the Analytics tab but never defined, which threw a
+// ReferenceError and crashed the whole dashboard on render.
+function getEmotionTone(emotion: string): 'positive' | 'warning' | 'danger' | 'info' {
+    const e = (emotion || '').toLowerCase();
+    if (/joy|happy|love|optimis|gratitude|excite/.test(e)) return 'positive';
+    if (/anger|fear|sad|disgust|anxious|frustrat/.test(e)) return 'danger';
+    if (/surprise|confus|uncertain/.test(e)) return 'warning';
+    return 'info';
+}
+
+function getAttitudeTone(attitude: string): 'positive' | 'warning' | 'danger' | 'info' {
+    const a = (attitude || '').toLowerCase();
+    if (/enthusiast|positive|optimis/.test(a)) return 'positive';
+    if (/anxious|fear|resistant|negative/.test(a)) return 'danger';
+    if (/skeptic|cautious|concern/.test(a)) return 'warning';
+    return 'info';
+}
+
 export function AdminDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -317,33 +337,6 @@ export function AdminDashboard() {
       setSelectedCodingSignalId(reflectionSignals[0].id);
     }
   }, [reflectionSignals, selectedCodingSignalId]);
-
-  useEffect(() => {
-    if (existingHumanCoding) {
-      setCodingDraft({
-        reflective_depth_level: existingHumanCoding.reflective_depth_level,
-        uncertainty_level: existingHumanCoding.uncertainty_level,
-        ai_stance_position: existingHumanCoding.ai_stance_position,
-        ethical_concern_present: existingHumanCoding.ethical_concern_present,
-        practicum_linkage_present: existingHumanCoding.practicum_linkage_present,
-        next_step_readiness_level: existingHumanCoding.next_step_readiness_level,
-        notes: existingHumanCoding.notes || '',
-      });
-      return;
-    }
-
-    if (selectedCodingSignal) {
-      setCodingDraft({
-        reflective_depth_level: selectedCodingSignal.reflective_depth_level,
-        uncertainty_level: selectedCodingSignal.uncertainty_level,
-        ai_stance_position: selectedCodingSignal.ai_stance_position,
-        ethical_concern_present: selectedCodingSignal.ethical_concern_present,
-        practicum_linkage_present: selectedCodingSignal.practicum_linkage_present,
-        next_step_readiness_level: selectedCodingSignal.next_step_readiness_level,
-        notes: '',
-      });
-    }
-  }, [existingHumanCoding, selectedCodingSignal]);
 
   const toggleAdminRole = async (userId: string, currentRole: string) => {
     setUpdatingRole(userId);
@@ -628,6 +621,36 @@ export function AdminDashboard() {
     () => humanCodingRecords.find((record) => record.session_id === selectedCodingSignal?.session_id && record.turn_number === selectedCodingSignal?.turn_number && record.coder_id === user?.id) || null,
     [humanCodingRecords, selectedCodingSignal, user],
   );
+
+  // Seed the human-coding draft from an existing record (or the signal's
+  // machine coding). MUST live after the two useMemos above: referencing them
+  // earlier hit a temporal-dead-zone ReferenceError that crashed the dashboard.
+  useEffect(() => {
+    if (existingHumanCoding) {
+      setCodingDraft({
+        reflective_depth_level: existingHumanCoding.reflective_depth_level,
+        uncertainty_level: existingHumanCoding.uncertainty_level,
+        ai_stance_position: existingHumanCoding.ai_stance_position,
+        ethical_concern_present: existingHumanCoding.ethical_concern_present,
+        practicum_linkage_present: existingHumanCoding.practicum_linkage_present,
+        next_step_readiness_level: existingHumanCoding.next_step_readiness_level,
+        notes: existingHumanCoding.notes || '',
+      });
+      return;
+    }
+
+    if (selectedCodingSignal) {
+      setCodingDraft({
+        reflective_depth_level: selectedCodingSignal.reflective_depth_level,
+        uncertainty_level: selectedCodingSignal.uncertainty_level,
+        ai_stance_position: selectedCodingSignal.ai_stance_position,
+        ethical_concern_present: selectedCodingSignal.ethical_concern_present,
+        practicum_linkage_present: selectedCodingSignal.practicum_linkage_present,
+        next_step_readiness_level: selectedCodingSignal.next_step_readiness_level,
+        notes: '',
+      });
+    }
+  }, [existingHumanCoding, selectedCodingSignal]);
   const reviewedSignalCount = reflectionSignals.filter((record) => !record.needs_review).length;
   const reviewedSummaryCount = reflectionSummaries.filter((record) => !record.needs_review).length;
   const codingCoverageCount = new Set(humanCodingRecords.map((record) => `${record.session_id}:${record.turn_number}`)).size;
