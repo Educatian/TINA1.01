@@ -73,17 +73,12 @@ export function Navbar() {
                         >
                             <AdminDashboardIcon />
                         </button>
-                        {location.pathname === '/admin' && (
-                            <button
-                                className="btn btn-secondary navbar-button"
-                                onClick={() => navigate('/')}
-                            >
-                                New Session
-                            </button>
-                        )}
                     </>
                 )}
 
+                {/* One "New Session" button for any non-home page (incl. /admin,
+                    /account). The admin block used to render its own as well,
+                    which produced a duplicate on the dashboard. */}
                 {location.pathname !== '/' && (
                     <button
                         className="btn btn-secondary navbar-button"

@@ -169,7 +169,10 @@ export function AdminDashboard() {
     setSessions(sessionsData);
     const results = await Promise.allSettled([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-      supabase.from('session_analytics').select('*').order('created_at', { ascending: false }).limit(500),
+      // session_analytics is the legacy table: it has a `timestamp` column, not
+      // `created_at`. Ordering by created_at returned 42703 and silently emptied
+      // the whole Analytics tab even though rows exist.
+      supabase.from('session_analytics').select('*').order('timestamp', { ascending: false }).limit(500),
       supabase.from('session_reflection_signals').select('*').order('created_at', { ascending: false }).limit(500),
       supabase.from('session_reflection_summaries').select('*').order('created_at', { ascending: false }).limit(300),
       supabase.from('human_coded_reflection_signals').select('*').order('updated_at', { ascending: false }).limit(300),
