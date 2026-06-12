@@ -11,7 +11,8 @@
 import type { Env } from './types';
 
 const enc = new TextEncoder();
-const PBKDF2_ITERATIONS = 210_000;
+// Cloudflare Workers' Web Crypto caps PBKDF2 at 100,000 iterations.
+const PBKDF2_ITERATIONS = 100_000;
 const JWT_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 // ---- base64url -------------------------------------------------------------

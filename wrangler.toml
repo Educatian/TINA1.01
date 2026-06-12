@@ -1,4 +1,4 @@
-# Cloudflare Pages (advanced mode) — TINA on one vendor.
+# Cloudflare Pages (advanced mode) -- TINA on one vendor.
 # Static assets in dist/ are served directly; dist/_worker.js (bundled from
 # cloudflare/worker/) handles /api/*. D1 is the database; JWT_SECRET + AI keys
 # are set as secrets (see docs/cloudflare-migration.md).
@@ -10,13 +10,18 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "tina-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"   # from: wrangler d1 create tina-db
+database_id = "2d22dfe6-dfef-4d40-b303-56637bdfc195"
 
-# Live presence (replaces Supabase Realtime) — one Durable Object per channel.
-[[durable_objects.bindings]]
-name = "PRESENCE"
-class_name = "PresenceRoom"
-
-[[migrations]]
-tag = "v1"
-new_classes = ["PresenceRoom"]
+# Live presence (Durable Object) note:
+# Pages cannot DEFINE a Durable Object class in its own _worker.js -- the class
+# must live in a standalone Worker and Pages binds to it via script_name. The
+# PresenceRoom is deployed separately (cloudflare/presence-worker/) and bound
+# here once that Worker exists:
+#
+# [[durable_objects.bindings]]
+# name = "PRESENCE"
+# class_name = "PresenceRoom"
+# script_name = "tina-presence"
+#
+# Until then /api/presence returns 503 and the client shows nobody else (the
+# "N other learners active" indicator simply stays hidden).

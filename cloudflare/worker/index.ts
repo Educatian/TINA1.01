@@ -125,6 +125,7 @@ export default {
             // The browser can't set headers on the handshake, so the JWT comes
             // in as ?token=; we verify it, then forward to the room with ?uid=.
             if (pathname === '/api/presence') {
+                if (!env.PRESENCE) return json(503, { error: 'presence_not_configured' });
                 if (req.headers.get('Upgrade') !== 'websocket') return json(426, { error: 'expected_websocket' });
                 const token = url.searchParams.get('token') || '';
                 const claims = token ? await verifyJwt(token, env.JWT_SECRET, nowSec()) : null;

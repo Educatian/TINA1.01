@@ -231,6 +231,9 @@ export async function runDataOp(db: D1Database, op: DataOp, claims: JwtClaims): 
         }
         if (!where.length) throw new DataError(400, 'update_requires_filter');
         const setCols = entries;
+        // Nothing writable left (e.g. a non-admin's only field was a stripped
+        // privileged column) -> no-op rather than emitting "SET  WHERE ...".
+        if (setCols.length === 0) return [];
         const setSql = setCols.map((c) => `${c} = ?`).join(', ');
         const setBinds = setCols.map((c) => jsonEncode(policy, c, values[c]));
         const sql = `UPDATE ${op.table} SET ${setSql} WHERE ${where.join(' AND ')} RETURNING *`;

@@ -9,7 +9,11 @@
 
 **An AI-powered reflective coaching tool for educators exploring their teacher identity and AI integration practices**
 
-[🚀 Live Demo](https://tina-adie.netlify.app) • [📖 Documentation](#features) • [🛠️ Setup](#getting-started)
+[☁️ Cloudflare Demo](https://tina-7kw.pages.dev) • [🚀 Netlify (class)](https://tina-adie1.netlify.app) • [📖 Documentation](#features) • [🛠️ Setup](#getting-started)
+
+> **Live all-Cloudflare demo:** https://tina-7kw.pages.dev — the single-vendor build
+> (Cloudflare Pages + Worker auth + D1). Sign up with any email to try it. Chat needs
+> the instance's Gemini/HF keys set; auth, sessions, and the reflection UI work out of the box.
 
 </div>
 

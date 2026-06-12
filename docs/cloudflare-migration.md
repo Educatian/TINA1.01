@@ -5,6 +5,10 @@ single vendor: **Cloudflare Pages (hosting) + Worker (API) + D1 (database)**,
 with auth built into the Worker. The live `main` (Netlify + Supabase) keeps
 running until you cut over.
 
+> **Live deploy:** https://tina-7kw.pages.dev (Pages project `tina`, D1 `tina-db`).
+> Auth + sessions + the reflection UI are verified working; set the Gemini/HF
+> secrets to enable chat (see Setup step 3).
+
 ## Architecture
 
 | Concern | Before | After |
