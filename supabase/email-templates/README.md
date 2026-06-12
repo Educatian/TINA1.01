@@ -4,6 +4,21 @@ Branded (Nanobanana-style) emails for the Supabase Auth flows.
 
 ## Password reset — install
 
+> Email delivery already works (the default Supabase reset email sends fine).
+> This just swaps the look to the TINA brand. Two ways:
+
+**A) One command (Management API).** Get a token from
+https://supabase.com/dashboard/account/tokens, then:
+
+```powershell
+$env:SUPABASE_ACCESS_TOKEN = "sbp_xxx"
+powershell -File supabase/apply-email-template.ps1
+```
+
+(In this session prefix with `!` so it runs in your shell.)
+
+**B) Dashboard paste (no token).**
+
 1. Supabase Dashboard → **Authentication → Email Templates → "Reset Password"**.
 2. **Subject:** `Reset your TINA password 🍌`
 3. **Message body (HTML):** paste the contents of [`reset-password.html`](./reset-password.html).
