@@ -9,7 +9,7 @@
 
 **An AI-powered reflective coaching tool for educators exploring their teacher identity and AI integration practices**
 
-[☁️ Play the demo](https://tina-7kw.pages.dev) • [🚀 Netlify (class)](https://tina-adie1.netlify.app) • [📖 Documentation](#features) • [🛠️ Setup](#getting-started)
+[🏫 Class app](https://tina-adie.pages.dev) • [☁️ Keyless demo](https://tina-7kw.pages.dev) • [📖 Documentation](#features) • [🛠️ Setup](#getting-started)
 
 <br/>
 
@@ -43,7 +43,7 @@ For the structured activity customization model that keeps one shared chatbot wh
 | Feature | Description |
 |---------|-------------|
 | 💬 **Reflective Dialogue** | AI-guided conversation using Gemini 2.5 Flash, streamed with a live typing effect |
-| 🔐 **Server-Side AI Proxy** | All Gemini/HuggingFace keys live in a Netlify Function (`netlify/functions/ai-proxy.mts`) — never in the browser bundle. Supabase-JWT auth + per-user rate limiting |
+| 🔐 **Server-Side AI Proxy** | All Gemini/HuggingFace keys live in a Cloudflare Pages Function (`functions/api/ai-proxy.ts`) — never in the browser bundle. Supabase-JWT auth + per-user rate limiting |
 | 📊 **Personalized Reports** | Detailed PDF reports with teacher profiling, grounded in the learner's own verbatim excerpts |
 | 🔁 **Cross-Session Loop** | The next session opens by revisiting the previous report's "One Next Move" (+ a learner-chosen carry-forward question) — ALACT as a real cycle |
 | 📈 **Reflection Trajectory** | Learners see their own reflection-depth bars (turn by turn) in the closing report |
@@ -74,7 +74,7 @@ flowchart TB
     UI --> LOOP
   end
 
-  subgraph Edge["☁️ Netlify Function — ai-proxy.mts (server-side, keys live here)"]
+  subgraph Edge["☁️ Cloudflare Pages Function — ai-proxy.ts (server-side, keys live here)"]
     PROXY["Supabase-JWT auth<br/>+ per-user rate limit"]
   end
 
@@ -200,7 +200,7 @@ NLP          │  HuggingFace Inference API
 Database     │  Supabase (PostgreSQL)
 Auth         │  Supabase Auth
 PDF          │  jsPDF
-Hosting      │  Netlify
+Hosting      │  Cloudflare Pages (+ Pages Functions)
 ```
 
 ---
@@ -234,7 +234,7 @@ Create a `.env` file with:
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
-# server-side ONLY — read by netlify/functions/ai-proxy.mts
+# server-side ONLY — read by functions/api/ai-proxy.ts (Pages secrets in prod)
 GEMINI_API_KEY=your_gemini_api_key
 HF_API_KEY=your_huggingface_api_key
 ```
@@ -242,18 +242,21 @@ HF_API_KEY=your_huggingface_api_key
 ### Run Locally
 
 ```bash
-netlify dev   # serves Vite AND the AI proxy function together
+npm run dev                       # UI only (no AI proxy)
+npm run build && npm run cf:dev   # full app + the AI proxy Pages Function
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+Deploying: `npm run cf:deploy` publishes the build (and `functions/`) to the
+Cloudflare Pages project in `wrangler.toml`; see
+[docs/cloudflare-hosting.md](./docs/cloudflare-hosting.md) for env/secrets.
+
 Security notes:
 - AI keys are **never** compiled into the client bundle. All Gemini/HuggingFace
-  calls go through `/.netlify/functions/ai-proxy`, which verifies the learner's
+  calls go through `/api/ai-proxy`, which verifies the learner's
   Supabase access token and enforces a per-user rate limit
   (apply `tina-api-proxy.sql` to enable the limit; auth is enforced regardless).
-- Existing Netlify sites keep working without dashboard changes: the function
-  falls back to the legacy `VITE_`-prefixed env values server-side.
 - Optional migrations: `tina-coaching-telemetry.sql` (move telemetry),
   `tina-api-proxy.sql` (rate limit), `tina-reflection-loop.sql` (carry-forward),
   `tina-artifact-anchor.sql` (persist the reflection artifact across resume),

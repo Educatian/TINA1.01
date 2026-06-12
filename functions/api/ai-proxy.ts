@@ -1,19 +1,17 @@
 /* ============================================================================
    TINA — SERVER-SIDE AI PROXY (Cloudflare Pages Function)
 
-   The Cloudflare-hosted twin of netlify/functions/ai-proxy.mts. Same contract,
-   same auth, same allowlists — but dependency-free (talks to the Gemini and
-   HuggingFace REST APIs with plain fetch) so it runs natively on the Workers
-   runtime that powers Pages Functions. The @google/genai SDK pulls Node APIs
-   and does not run here, hence the direct REST port.
+   Dependency-free (talks to the Gemini and HuggingFace REST APIs with plain
+   fetch) so it runs natively on the Workers runtime that powers Pages
+   Functions. The @google/genai SDK pulls Node APIs and does not run here,
+   hence the direct REST port.
 
    HOSTING MODEL
-   Web hosting moves to Cloudflare Pages; Supabase stays the database + auth.
-   This function keeps the Gemini/HF keys server-side (Pages env / secrets) and
-   verifies the learner's Supabase JWT, exactly like the Netlify version.
+   Cloudflare Pages hosts the app; Supabase stays the database + auth. This
+   function keeps the Gemini/HF keys server-side (Pages env / secrets) and
+   verifies the learner's Supabase JWT.
 
-   ROUTE     POST /api/ai-proxy   (the client posts here on both hosts; Netlify
-             redirects /api/ai-proxy -> /.netlify/functions/ai-proxy)
+   ROUTE     POST /api/ai-proxy
    CONTRACT  { kind: 'gemini-chat', model, contents, systemInstruction } -> streamed text
              { kind: 'gemini-json', model, contents, config }            -> { text }
              { kind: 'hf', task, model, inputs, parameters }             -> HF JSON passthrough
@@ -32,7 +30,7 @@ interface Env {
     HF_API_KEY?: string;
     SUPABASE_URL?: string;
     SUPABASE_ANON_KEY?: string;
-    // Legacy VITE_-prefixed fallbacks, so an env copied from Netlify still works.
+    // Legacy VITE_-prefixed fallbacks, so an env copied from an old host still works.
     VITE_GEMINI_API_KEY?: string;
     VITE_HUGGINGFACE_API_KEY?: string;
     VITE_SUPABASE_URL?: string;

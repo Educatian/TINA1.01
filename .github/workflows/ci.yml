@@ -18,7 +18,7 @@ jobs:
       - run: npm test
       - run: npm run build
       # Guard: AI keys must never appear in the client bundle (they live only
-      # in the Netlify function env — see netlify/functions/ai-proxy.mts).
+      # in the Pages Function env — see functions/api/ai-proxy.ts).
       - name: Assert no API keys in bundle
         run: |
           if grep -rE "AIza[0-9A-Za-z_-]{30,}|hf_[0-9A-Za-z]{30,}" dist/; then

@@ -2,7 +2,7 @@ name: Supabase keep-alive
 
 # Prevents the Supabase free-tier project (qjopomljrjjhukhjiwwm) from
 # auto-pausing after 7 days of inactivity, which breaks login at
-# https://tina-adie1.netlify.app/login with "Failed to Fetch".
+# https://tina-adie.pages.dev/login with "Failed to Fetch".
 #
 # A GET against PostgREST (/rest/v1/...) executes a real Postgres query,
 # so Supabase counts it as database activity. The anon key below is the

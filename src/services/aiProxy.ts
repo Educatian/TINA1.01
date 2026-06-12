@@ -3,10 +3,7 @@
 
    All Gemini / HuggingFace traffic goes through /api/ai-proxy with the
    learner's Supabase access token. API keys never reach the browser.
-   The same path serves both hosts: on Cloudflare Pages it is the Pages Function
-   (functions/api/ai-proxy.ts); on Netlify a redirect maps it to the Netlify
-   Function (netlify/functions/ai-proxy.mts). So hosting can move between the
-   two with zero client changes.
+   /api/ai-proxy is the Cloudflare Pages Function at functions/api/ai-proxy.ts.
 
    createProxyChat(...) is a drop-in replacement for the @google/genai Chat
    object previously used by ChatInterface: it keeps the conversation history

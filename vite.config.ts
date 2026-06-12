@@ -3,9 +3,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // SECURITY: AI API keys are NEVER defined into the client bundle. All Gemini /
-// HuggingFace traffic goes through netlify/functions/ai-proxy.mts, which reads
-// the keys from server-side env. Run `netlify dev` locally so the function is
-// served alongside Vite.
+// HuggingFace traffic goes through the Cloudflare Pages Function at
+// functions/api/ai-proxy.ts, which reads the keys from server-side env. Run
+// `npm run cf:dev` locally so the function is served alongside the build.
 export default defineConfig(() => {
   return {
     server: {

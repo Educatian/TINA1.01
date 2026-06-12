@@ -28,7 +28,6 @@
   },
   "exclude": [
     "functions",
-    "cloudflare",
-    "netlify"
+    "cloudflare"
   ]
 }
