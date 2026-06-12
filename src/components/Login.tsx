@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { hasSupabaseConfig } from '../lib/supabase';
@@ -17,6 +17,16 @@ export function Login() {
     const [resetError, setResetError] = useState<string | null>(null);
     const [resetBusy, setResetBusy] = useState(false);
     const { signIn, signUp, requestPasswordReset, loading, error } = useAuth();
+
+    // Deep link: ?guide=learner | ?guide=instructor (also accepts #guide=...)
+    // opens the usage guide directly, so the guide has a shareable URL.
+    useEffect(() => {
+        const raw = (new URLSearchParams(window.location.search).get('guide')
+            || (window.location.hash.match(/guide=(\w+)/)?.[1])
+            || '').toLowerCase();
+        if (raw === 'learner' || raw === 'instructor') setGuideRole(raw as GuideRole);
+        else if (raw === 'guide' || raw === '1' || raw === 'true') setGuideRole('learner');
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
