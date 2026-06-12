@@ -1,0 +1,16 @@
+{
+  "name": "TINA — Teacher Identity Navigation Assistant",
+  "short_name": "TINA",
+  "description": "A short AI-guided reflection on your teaching identity and AI practice.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFFEF7",
+  "theme_color": "#F4D03F",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/tina-mascot.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/tina-mascot.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/tina-mascot.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

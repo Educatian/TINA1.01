@@ -185,7 +185,16 @@ export function useAuth() {
     const signIn = useCallback(async (email: string, password: string) => {
         setAuthState(prev => ({ ...prev, loading: true, error: null }));
 
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        let result;
+        try {
+            result = await supabase.auth.signInWithPassword({ email, password });
+        } catch (networkErr) {
+            // Backend unreachable (e.g. Supabase paused) — surface a clear,
+            // recoverable message instead of an uncaught "Failed to fetch".
+            setAuthState(prev => ({ ...prev, loading: false, error: 'connectivity' }));
+            return false;
+        }
+        const { data, error } = result;
 
         if (error) {
             setAuthState(prev => ({ ...prev, loading: false, error: error.message }));
@@ -214,7 +223,14 @@ export function useAuth() {
     const signUp = useCallback(async (email: string, password: string) => {
         setAuthState(prev => ({ ...prev, loading: true, error: null }));
 
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        let result;
+        try {
+            result = await supabase.auth.signUp({ email, password });
+        } catch (networkErr) {
+            setAuthState(prev => ({ ...prev, loading: false, error: 'connectivity' }));
+            return false;
+        }
+        const { data, error } = result;
 
         if (error) {
             setAuthState(prev => ({ ...prev, loading: false, error: error.message }));

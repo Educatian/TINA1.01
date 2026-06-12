@@ -52,6 +52,7 @@ import { ProgressBar } from './ProgressBar';
 import { TinaAvatar, avatarStateForMove, type TinaAvatarState } from './TinaAvatar';
 import { MarkdownLite } from './MarkdownLite';
 import { Onboarding } from './Onboarding';
+import { ReturnReminder } from './ReturnReminder';
 import { onboardingSeenKey } from '../services/onboardingScript';
 import { ActivityContextHeader } from './ActivityContextHeader';
 import type { ActivityConfig, ActivityRecord, Message, Session } from '../types';
@@ -280,6 +281,26 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
     const canUseSelfTestActivities = Boolean(
         user?.email && SELF_TEST_LEARNER_EMAILS.has(user.email.toLowerCase()),
     );
+
+    // Composer draft autosave — a half-typed message survives a refresh, a
+    // dropped connection, or an accidental navigation, so the learner never
+    // loses their words.
+    const draftKey = user ? `tina-draft-${user.id}` : null;
+    useEffect(() => {
+        if (!draftKey) return;
+        try {
+            const saved = window.localStorage.getItem(draftKey);
+            if (saved) setInput(saved);
+        } catch { /* private mode */ }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draftKey]);
+    useEffect(() => {
+        if (!draftKey) return;
+        try {
+            if (input) window.localStorage.setItem(draftKey, input);
+            else window.localStorage.removeItem(draftKey);
+        } catch { /* ignore */ }
+    }, [input, draftKey]);
 
     useEffect(() => {
         messagesRef.current = messages;
@@ -1090,9 +1111,10 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                     </div>
                 </div>
 
-                <div className="chat-messages">
+                <div className="chat-messages" role="log" aria-live="polite" aria-label="Conversation with TINA" aria-busy={isLoading}>
                     {messages.length === 0 && (
                         <div className="chat-empty-state">
+                            {user && !actsAsInstructor && <ReturnReminder userId={user.id} />}
                             <video
                                 className="tina-idle-video"
                                 src="/video/tina-idle-loop.mp4"
@@ -1118,7 +1140,10 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                                     className="message-avatar"
                                 />
                             )}
-                            <div className={`message ${msg.role === 'user' ? 'message-user' : 'message-model'}`}>
+                            <div
+                                className={`message ${msg.role === 'user' ? 'message-user' : 'message-model'}`}
+                                aria-label={`${msg.role === 'user' ? 'You' : 'TINA'} said`}
+                            >
                                 {msg.role === 'model' ? <MarkdownLite text={msg.text} /> : msg.text}
                             </div>
                         </div>

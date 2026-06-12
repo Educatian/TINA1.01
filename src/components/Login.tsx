@@ -182,7 +182,13 @@ export function Login() {
                             </div>
                         )}
 
-                        {error && <div className="error-message">{error}</div>}
+                        {error === 'connectivity' ? (
+                            <div className="error-message">
+                                We can't reach the server right now. This usually clears up within a minute, please try again.
+                            </div>
+                        ) : error ? (
+                            <div className="error-message">{error}</div>
+                        ) : null}
 
                         <div className="form-group">
                             <label htmlFor="email">Email</label>
