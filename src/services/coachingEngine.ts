@@ -244,9 +244,13 @@ const STOPWORDS = new Set([
   'its', "it's", 'thats', "that's", 'one', 'two', 'much', 'many', 'still', 'even', 'now', 'time',
 ]);
 
-/** Content words of an utterance: normalized, stopwords removed, length >= 3. */
+/**
+ * Content words of an utterance: normalized, stopwords removed, length >= 3.
+ * "ai" is kept despite its length — it is the single most topical token in
+ * this app, and dropping it made every "...the AI..." reply look disengaged.
+ */
 export function contentWords(text: string): string[] {
-  return norm(text).split(' ').filter((w) => w.length >= 3 && !STOPWORDS.has(w));
+  return norm(text).split(' ').filter((w) => (w.length >= 3 || w === 'ai') && !STOPWORDS.has(w));
 }
 
 // Cheap stemming for overlap ("grading"/"graded" -> "grad", "essays" -> "essay").
@@ -324,10 +328,38 @@ export function extractUptakeAnchor(text: string): string | null {
 // are minimal/shallow turns, already handled by the depth logic, not topic shifts.
 const DIGRESSION_MIN_WORDS = 8;
 
+/** Full text of the most recent model message (the turn the learner answers). */
+function lastAiMessageFrom(history: { role: string; text: string }[]): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.role === 'model' && (m.text || '').trim()) return m.text;
+  }
+  return null;
+}
+
+/**
+ * What the learner is expected to engage with: ALL question sentences of
+ * TINA's last message (a reply often pairs a substantive question with a short
+ * follow-up like "What was that like?" — judging only the last one
+ * false-positives on-track replies). When even the joined questions carry too
+ * little content to judge engagement, fall back to the whole message.
+ * Null when the last model message asked nothing (nothing pending).
+ */
+export function pendingQuestionFocus(history: { role: string; text: string }[]): string | null {
+  const msg = lastAiMessageFrom(history);
+  if (!msg) return null;
+  const questions = msg.match(/[^.!?]*\?/g);
+  if (!questions) return null;
+  const joined = questions.join(' ');
+  return contentWords(joined).length >= 2 ? joined : msg;
+}
+
 /**
  * assessUptake — PURE. Computes the uptake context for a learner turn against
  * the conversation history: their quotable anchor, the pending TINA question,
- * and whether this substantive turn disengaged from it (digression).
+ * and whether this substantive turn disengaged from the pending focus
+ * (digression). Deliberately lenient: a single shared (fuzzy-stemmed) content
+ * word counts as engaged — only true non-sequiturs bridge.
  */
 export function assessUptake(
   text: string,
@@ -335,12 +367,13 @@ export function assessUptake(
 ): ClassifiedTurn['uptake'] {
   const anchor = extractUptakeAnchor(text);
   const lastAiQuestion = lastAiQuestionFrom(history);
+  const focus = pendingQuestionFocus(history);
   const wordCount = norm(text).split(' ').filter(Boolean).length;
   const digression = Boolean(
-    lastAiQuestion &&
+    focus && // TINA must have invited a response to disengage from
     anchor &&
     wordCount >= DIGRESSION_MIN_WORDS &&
-    sharedContentCount(text, lastAiQuestion) === 0,
+    sharedContentCount(text, focus) === 0,
   );
   return { anchor, lastAiQuestion, digression };
 }

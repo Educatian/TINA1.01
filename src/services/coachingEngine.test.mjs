@@ -454,3 +454,19 @@ test('regenerationHint: no_uptake instructs referencing the learner words', () =
   const hint = regenerationHint('LOOK_BACK', ['no_uptake']);
   assert.match(hint, /referencing or restating their own words/i);
 });
+
+test('assessUptake: engaging the SUBSTANTIVE question is on-track even when a thin follow-up question came last (live-sim regression)', () => {
+  const history = [aiTurn(
+    'That sounds exciting! Could you share a specific recent instance where you used ChatGPT for grading or feedback? What was that moment like for you?',
+  )];
+  const on = assessUptake(
+    'Back to the grading - I worry the AI feedback misses what my students actually struggle with in their writing',
+    history,
+  );
+  assert.equal(on.digression, false, 'answered the substantive question, not the thin trailing one');
+  const off = assessUptake(
+    'Did you hear the news about the World Cup schedule? My brother got tickets and we are planning a trip',
+    history,
+  );
+  assert.equal(off.digression, true, 'true non-sequitur still bridges');
+});
