@@ -3,7 +3,13 @@ import { supabase } from '../lib/supabase';
 import { clearRolePreview } from '../services/rolePreview';
 import type { User, AuthState } from '../types';
 
-const OVERRIDE_ADMIN_EMAILS = new Set(['jewoong.moon@gmail.com']);
+// Instructor/admin accounts. The dashboard's instructor view is gated by
+// isAdmin; listing an email here grants it regardless of the profiles row, so
+// access never depends on a DB write succeeding.
+const OVERRIDE_ADMIN_EMAILS = new Set([
+    'jewoong.moon@gmail.com',
+    'hbae4@albany.edu', // Haesol Bae — ETAP608 instructor
+]);
 const PROFILE_LOOKUP_TIMEOUT_MS = 3500;
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 5000;
 

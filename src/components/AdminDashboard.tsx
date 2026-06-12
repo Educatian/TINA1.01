@@ -39,6 +39,52 @@ const SECTION_INFO = {
     classifierAgreement: "How often the fast lexical classifier agrees with Gemini's depth judgment — a measurement-validity check.",
 } as const;
 
+// Short tooltips for the small metric cards in each tab.
+const STAT_INFO = {
+    // overview
+    ovSessions: 'Total sessions started for the selected activity (or all activities).',
+    ovCompleted: 'Sessions that reached the closing reflection report.',
+    ovAvgTurns: 'Average number of exchanges (learner + TINA turns) per session.',
+    ovCompletionRate: 'Share of started sessions that finished (completed ÷ started).',
+    // NLP analytics
+    anTotal: 'Total per-turn analytics rows logged in session_analytics.',
+    anSentiment: 'Mean sentiment across analyzed turns (0 = negative, 0.5 = neutral, 1 = positive).',
+    anEngagement: 'Mean engagement score, derived from message length and response time.',
+    anSessions: 'Distinct sessions that have at least one analyzed turn.',
+    // research signals
+    reTurnSignals: 'Per-turn reflection signals Gemini extracted (one row per coded turn).',
+    reSummaries: 'Whole-session syntheses Gemini produced (one per completed session).',
+    reCoverage: 'Share of eligible turns/sessions that have an extracted signal.',
+    reConfidence: "Gemini's mean confidence in its own signal extraction (0–1).",
+    reEthics: 'Percent of turns where an ethical concern was detected.',
+    rePracticum: 'Percent of turns the learner tied to a real classroom or practicum experience.',
+    // coaching moves
+    mvLogged: 'Total coaching-move events logged in coaching_turns.',
+    mvSessions: 'Distinct sessions with at least one logged coaching move.',
+    mvCritical: 'Turns classified at the critical reflection level (the deepest tier).',
+    mvRegen: 'Percent of replies the verify guard regenerated for breaking the reflective stance.',
+    // review queue
+    rvQueue: 'Auto-extracted signals still waiting for a human to verify or correct.',
+    rvSignals: 'Turn signals a human has already reviewed.',
+    rvSummaries: 'Session summaries a human has already reviewed.',
+    // human coding
+    cdCoded: 'Distinct turns that have at least one human coding record.',
+    cdYours: 'Turns you personally have coded.',
+    // feedback
+    fbOpen: "Learner feedback requests you haven't answered yet.",
+    fbAnswered: "Feedback requests you've responded to.",
+    // activity studio — monitor
+    acAssigned: 'Learners assigned to this activity.',
+    acStarted: 'Assigned learners who have opened a session.',
+    acCompleted: 'Learners who finished and received a reflection report.',
+    acSubmitted: 'Learners who submitted their output artifact.',
+    acAvgTurns: 'Average exchanges per session for this activity.',
+    acLiveNow: 'Learners with a session active right now (realtime presence).',
+    acNotStarted: "Assigned learners who haven't begun yet.",
+    acFollowUp: 'Started but not yet completed — may need a nudge.',
+    acReadyReview: 'Completed sessions awaiting your review or feedback.',
+} as const;
+
 interface UserProfile { id: string; email: string; role: string; created_at: string; }
 interface SessionAnalyticsRecord {
   id: string; session_id: string; turn_number: number; sentiment_score: number; sentiment_label: string;
@@ -940,27 +986,27 @@ export function AdminDashboard() {
                   <h3>Monitor Activity</h3>
                   <div className="stats-grid activity-stats-grid">
                     <div className="stat-card">
-                      <h3>Assigned</h3>
+                      <h3>Assigned<InfoTip text={STAT_INFO.acAssigned} /></h3>
                       <div className="value">{enrollments.length}</div>
                     </div>
                     <div className="stat-card">
-                      <h3>Started</h3>
+                      <h3>Started<InfoTip text={STAT_INFO.acStarted} /></h3>
                       <div className="value">{startedLearnerCount}</div>
                     </div>
                     <div className="stat-card">
-                      <h3>Completed</h3>
+                      <h3>Completed<InfoTip text={STAT_INFO.acCompleted} /></h3>
                       <div className="value">{completedLearnerCount}</div>
                     </div>
                     <div className="stat-card">
-                      <h3>Submitted</h3>
+                      <h3>Submitted<InfoTip text={STAT_INFO.acSubmitted} /></h3>
                       <div className="value">{submittedLearnerCount}</div>
                     </div>
                     <div className="stat-card">
-                      <h3>Avg Turns</h3>
+                      <h3>Avg Turns<InfoTip text={STAT_INFO.acAvgTurns} /></h3>
                       <div className="value">{avgActivityTurns}</div>
                     </div>
                     <div className="stat-card">
-                      <h3>Live Now</h3>
+                      <h3>Live Now<InfoTip text={STAT_INFO.acLiveNow} /></h3>
                       <div className="value">{liveLearnerCount}</div>
                     </div>
                   </div>
@@ -968,15 +1014,15 @@ export function AdminDashboard() {
                   <h3 className="activity-section-heading">What Needs Attention</h3>
                   <div className="stats-grid activity-stats-grid">
                     <div className="stat-card">
-                      <h3>Not Started</h3>
+                      <h3>Not Started<InfoTip text={STAT_INFO.acNotStarted} /></h3>
                       <div className="value">{notStartedLearnerCount}</div>
                     </div>
                     <div className="stat-card">
-                      <h3>Need Follow-Up</h3>
+                      <h3>Need Follow-Up<InfoTip text={STAT_INFO.acFollowUp} /></h3>
                       <div className="value">{followUpLearnerCount}</div>
                     </div>
                     <div className="stat-card">
-                      <h3>Ready To Review</h3>
+                      <h3>Ready To Review<InfoTip text={STAT_INFO.acReadyReview} /></h3>
                       <div className="value">{submittedLearnerCount}</div>
                     </div>
                   </div>
@@ -1058,10 +1104,10 @@ export function AdminDashboard() {
               <p className="admin-header-copy">{selectedUser ? `Viewing: ${selectedUser.email}` : 'All users overview'}</p>
             </div>
             <div className="stats-grid stats-grid-compact">
-              <div className="stat-card stat-card-compact"><h3>Sessions</h3><div className="value">{filteredSessions.length}</div></div>
-              <div className="stat-card stat-card-compact"><h3>Completed</h3><div className="value">{completedSessions.length}</div></div>
-              <div className="stat-card stat-card-compact"><h3>Avg. Turns</h3><div className="value">{avgTurns}</div></div>
-              <div className="stat-card stat-card-compact"><h3>Completion Rate</h3><div className="value">{filteredSessions.length > 0 ? Math.round((completedSessions.length / filteredSessions.length) * 100) : 0}%</div></div>
+              <div className="stat-card stat-card-compact"><h3>Sessions<InfoTip text={STAT_INFO.ovSessions} /></h3><div className="value">{filteredSessions.length}</div></div>
+              <div className="stat-card stat-card-compact"><h3>Completed<InfoTip text={STAT_INFO.ovCompleted} /></h3><div className="value">{completedSessions.length}</div></div>
+              <div className="stat-card stat-card-compact"><h3>Avg. Turns<InfoTip text={STAT_INFO.ovAvgTurns} /></h3><div className="value">{avgTurns}</div></div>
+              <div className="stat-card stat-card-compact"><h3>Completion Rate<InfoTip text={STAT_INFO.ovCompletionRate} /></h3><div className="value">{filteredSessions.length > 0 ? Math.round((completedSessions.length / filteredSessions.length) * 100) : 0}%</div></div>
             </div>
             <h2 className="dashboard-section-title">Recent Sessions<InfoTip text={SECTION_INFO.recentSessions} /></h2>
             <div className="sessions-table dashboard-table-shell">
@@ -1083,10 +1129,10 @@ export function AdminDashboard() {
             <p className="dashboard-page-copy">Legacy session analytics from <code>session_analytics</code>, summarized in compact panels.</p>
           </div>
           <div className="stats-grid stats-grid-compact">
-            <div className="stat-card stat-card-compact"><h3>Total Records</h3><div className="value">{sessionAnalytics.length}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Avg Sentiment</h3><div className={`value ${parseFloat(avgSentiment) > 0.5 ? 'metric-positive' : 'metric-danger'}`}>{avgSentiment}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Avg Engagement</h3><div className="value metric-info">{avgEngagement}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Sessions Analyzed</h3><div className="value">{new Set(sessionAnalytics.map((a) => a.session_id)).size}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Total Records<InfoTip text={STAT_INFO.anTotal} /></h3><div className="value">{sessionAnalytics.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Avg Sentiment<InfoTip text={STAT_INFO.anSentiment} /></h3><div className={`value ${parseFloat(avgSentiment) > 0.5 ? 'metric-positive' : 'metric-danger'}`}>{avgSentiment}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Avg Engagement<InfoTip text={STAT_INFO.anEngagement} /></h3><div className="value metric-info">{avgEngagement}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Sessions Analyzed<InfoTip text={STAT_INFO.anSessions} /></h3><div className="value">{new Set(sessionAnalytics.map((a) => a.session_id)).size}</div></div>
           </div>
           <div className="analytics-grid analytics-grid-compact">
             <div className="analytics-panel">
@@ -1114,12 +1160,12 @@ export function AdminDashboard() {
             <p className="dashboard-page-copy">Gemini-structured reflection signals and session synthesis for preservice teacher learning analytics.</p>
           </div>
           <div className="stats-grid stats-grid-compact">
-            <div className="stat-card stat-card-compact"><h3>Turn Signals</h3><div className="value">{reflectionSignals.length}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Session Summaries</h3><div className="value">{reflectionSummaries.length}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Coverage</h3><div className="value">{researchCoverage}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Avg Confidence</h3><div className="value">{avgResearchConfidence}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Ethics Mention</h3><div className="value">{ethicalConcernRate}%</div></div>
-            <div className="stat-card stat-card-compact"><h3>Practicum Link</h3><div className="value">{practicumLinkRate}%</div></div>
+            <div className="stat-card stat-card-compact"><h3>Turn Signals<InfoTip text={STAT_INFO.reTurnSignals} /></h3><div className="value">{reflectionSignals.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Session Summaries<InfoTip text={STAT_INFO.reSummaries} /></h3><div className="value">{reflectionSummaries.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Coverage<InfoTip text={STAT_INFO.reCoverage} /></h3><div className="value">{researchCoverage}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Avg Confidence<InfoTip text={STAT_INFO.reConfidence} /></h3><div className="value">{avgResearchConfidence}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Ethics Mention<InfoTip text={STAT_INFO.reEthics} /></h3><div className="value">{ethicalConcernRate}%</div></div>
+            <div className="stat-card stat-card-compact"><h3>Practicum Link<InfoTip text={STAT_INFO.rePracticum} /></h3><div className="value">{practicumLinkRate}%</div></div>
           </div>
           <div className="analytics-grid analytics-grid-compact">
             <div className="analytics-panel">
@@ -1264,10 +1310,10 @@ export function AdminDashboard() {
           ) : (
             <>
               <div className="stats-grid stats-grid-compact">
-                <div className="stat-card stat-card-compact"><h3>Logged Turns</h3><div className="value">{coachingTurns.length}</div></div>
-                <div className="stat-card stat-card-compact"><h3>Sessions</h3><div className="value">{moveSessionCount}</div></div>
-                <div className="stat-card stat-card-compact"><h3>Critical Level</h3><div className="value">{moveLevelCounts.critical || 0}</div></div>
-                <div className="stat-card stat-card-compact"><h3>Regen Rate</h3><div className="value">{moveRegenRate}%</div></div>
+                <div className="stat-card stat-card-compact"><h3>Logged Turns<InfoTip text={STAT_INFO.mvLogged} /></h3><div className="value">{coachingTurns.length}</div></div>
+                <div className="stat-card stat-card-compact"><h3>Sessions<InfoTip text={STAT_INFO.mvSessions} /></h3><div className="value">{moveSessionCount}</div></div>
+                <div className="stat-card stat-card-compact"><h3>Critical Level<InfoTip text={STAT_INFO.mvCritical} /></h3><div className="value">{moveLevelCounts.critical || 0}</div></div>
+                <div className="stat-card stat-card-compact"><h3>Regen Rate<InfoTip text={STAT_INFO.mvRegen} /></h3><div className="value">{moveRegenRate}%</div></div>
               </div>
               <div className="dashboard-panel-grid">
                 <div className="analytics-panel">
@@ -1391,9 +1437,9 @@ export function AdminDashboard() {
             <p className="dashboard-page-copy">Focus on low-confidence or pedagogically important cases before using the signals in research interpretation.</p>
           </div>
           <div className="stats-grid stats-grid-compact">
-            <div className="stat-card stat-card-compact"><h3>Queue Size</h3><div className="value">{reviewQueue.length}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Reviewed Signals</h3><div className="value">{reviewedSignalCount}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Reviewed Summaries</h3><div className="value">{reviewedSummaryCount}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Queue Size<InfoTip text={STAT_INFO.rvQueue} /></h3><div className="value">{reviewQueue.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Reviewed Signals<InfoTip text={STAT_INFO.rvSignals} /></h3><div className="value">{reviewedSignalCount}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Reviewed Summaries<InfoTip text={STAT_INFO.rvSummaries} /></h3><div className="value">{reviewedSummaryCount}</div></div>
           </div>
           {reviewStatusMessage && <p className="dashboard-status-message">{reviewStatusMessage}</p>}
           <div className="dashboard-panel-grid">
@@ -1449,8 +1495,8 @@ export function AdminDashboard() {
             <p className="dashboard-page-copy">Capture instructor or researcher labels so you can compare AI-extracted signals with human interpretation.</p>
           </div>
           <div className="stats-grid stats-grid-compact">
-            <div className="stat-card stat-card-compact"><h3>Coded Turns</h3><div className="value">{codingCoverageCount}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Your Coding</h3><div className="value">{humanCodingRecords.filter((record) => record.coder_id === user?.id).length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Coded Turns<InfoTip text={STAT_INFO.cdCoded} /></h3><div className="value">{codingCoverageCount}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Your Coding<InfoTip text={STAT_INFO.cdYours} /></h3><div className="value">{humanCodingRecords.filter((record) => record.coder_id === user?.id).length}</div></div>
           </div>
           {codingStatusMessage && <p className="dashboard-status-message">{codingStatusMessage}</p>}
           <div className="dashboard-panel-grid">
@@ -1553,8 +1599,8 @@ export function AdminDashboard() {
             <p className="dashboard-page-copy">Learners can request written feedback on a reflection. Answers appear in their My Account. (Requires <code>tina-instructor-feedback.sql</code>; scoped to activities you own.)</p>
           </div>
           <div className="stats-grid stats-grid-compact">
-            <div className="stat-card stat-card-compact"><h3>Open Requests</h3><div className="value">{feedbackOpen.length}</div></div>
-            <div className="stat-card stat-card-compact"><h3>Answered</h3><div className="value">{feedbackAnswered.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Open Requests<InfoTip text={STAT_INFO.fbOpen} /></h3><div className="value">{feedbackOpen.length}</div></div>
+            <div className="stat-card stat-card-compact"><h3>Answered<InfoTip text={STAT_INFO.fbAnswered} /></h3><div className="value">{feedbackAnswered.length}</div></div>
           </div>
 
           {feedbackRequests.length === 0 ? (
