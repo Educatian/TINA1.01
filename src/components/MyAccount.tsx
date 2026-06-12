@@ -7,8 +7,13 @@ import { useAuth } from '../hooks/useAuth';
 import { getUserSessions } from '../hooks/useSession';
 import { ReflectionJourney } from './ReflectionJourney';
 import { LearnerInsights } from './LearnerInsights';
+import { CollapsibleSection } from './CollapsibleSection';
 import { getUserFeedback, requestInstructorFeedback, type SessionFeedback } from '../services/feedbackService';
 import type { Message, Session } from '../types';
+
+// Only the most recent sessions render by default; the rest sit behind a
+// "Show all" toggle so the page stays short for learners with long histories.
+const RECENT_SESSION_COUNT = 5;
 
 export function MyAccount() {
     const { user, signOut } = useAuth();
@@ -19,6 +24,7 @@ export function MyAccount() {
     const [viewingChat, setViewingChat] = useState<Session | null>(null);
     const [feedbackBySession, setFeedbackBySession] = useState<Record<string, SessionFeedback>>({});
     const [requestingId, setRequestingId] = useState<string | null>(null);
+    const [showAllSessions, setShowAllSessions] = useState(false);
     const chatViewRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -269,8 +275,12 @@ export function MyAccount() {
             {!loading && <ReflectionJourney sessions={sessions} />}
             {!loading && user && <LearnerInsights userId={user.id} />}
 
-            <div className="account-section">
-                <h2>My Reflection Sessions</h2>
+            <CollapsibleSection
+                storageKey="sessions"
+                title="My Reflection Sessions"
+                summary={`${sessions.length} ${sessions.length === 1 ? 'session' : 'sessions'}`}
+                defaultOpen
+            >
                 <p style={{ color: '#6b7280', marginBottom: '20px' }}>
                     Revisit past conversations, continue unfinished ones, or keep a copy of your work.
                 </p>
@@ -286,7 +296,7 @@ export function MyAccount() {
                     </div>
                 ) : (
                     <div className="sessions-list">
-                        {sessions.map((session) => (
+                        {(showAllSessions ? sessions : sessions.slice(0, RECENT_SESSION_COUNT)).map((session) => (
                             <div key={session.id} className="session-card">
                                 <div className="session-info">
                                     <h3>
@@ -359,9 +369,19 @@ export function MyAccount() {
                                 )}
                             </div>
                         ))}
+                        {sessions.length > RECENT_SESSION_COUNT && (
+                            <button
+                                className="btn btn-secondary show-all-sessions"
+                                onClick={() => setShowAllSessions((v) => !v)}
+                            >
+                                {showAllSessions
+                                    ? `Show recent ${RECENT_SESSION_COUNT} only`
+                                    : `Show all ${sessions.length} sessions`}
+                            </button>
+                        )}
                     </div>
                 )}
-            </div>
+            </CollapsibleSection>
 
             <div className="account-section">
                 <h2>Account Settings</h2>

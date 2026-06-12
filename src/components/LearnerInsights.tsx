@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getLearnerCoverage, type LearnerCoverage } from '../services/learnerInsights';
+import { CollapsibleSection } from './CollapsibleSection';
 
 /* ============================================================================
    LearnerInsights — coverage / tendency feedback for the learner.
@@ -33,10 +34,9 @@ export function LearnerInsights({ userId }: { userId: string }) {
 
     if (data === undefined) {
         return (
-            <div className="account-section">
-                <h2>Your Reflection Patterns</h2>
+            <CollapsibleSection storageKey="patterns" title="Your Reflection Patterns" defaultOpen={false}>
                 <p style={{ color: '#9ca3af' }}>Reading your patterns…</p>
-            </div>
+            </CollapsibleSection>
         );
     }
     if (!data || data.totalTurns === 0) return null;
@@ -46,8 +46,12 @@ export function LearnerInsights({ userId }: { userId: string }) {
     const ctxMax = Math.max(...data.practicumContexts.map((c) => c.count), 1);
 
     return (
-        <div className="account-section">
-            <h2>Your Reflection Patterns</h2>
+        <CollapsibleSection
+            storageKey="patterns"
+            title="Your Reflection Patterns"
+            summary={`${data.totalTurns} ${data.totalTurns === 1 ? 'turn' : 'turns'} analyzed`}
+            defaultOpen={false}
+        >
             <p style={{ color: '#6b7280', marginBottom: '20px' }}>
                 Across your reflections so far, here is where your attention has gone, and where there is room to explore.
             </p>
@@ -77,6 +81,6 @@ export function LearnerInsights({ userId }: { userId: string }) {
                     {data.practicumContexts.map((c) => <Bar key={c.key} label={c.label} count={c.count} max={ctxMax} />)}
                 </div>
             )}
-        </div>
+        </CollapsibleSection>
     );
 }

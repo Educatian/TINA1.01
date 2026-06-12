@@ -6,6 +6,7 @@ import {
     extractNextMove,
     type DepthBand,
 } from '../services/reflectionLoop';
+import { CollapsibleSection } from './CollapsibleSection';
 import type { Session } from '../types';
 
 /* ============================================================================
@@ -69,8 +70,12 @@ export function ReflectionJourney({ sessions }: { sessions: Session[] }) {
     const withJol = (points || []).filter((p) => p.jolRating !== null && p.jolMeasured !== null);
 
     return (
-        <div className="account-section">
-            <h2>Your Reflection Journey</h2>
+        <CollapsibleSection
+            storageKey="journey"
+            title="Your Reflection Journey"
+            summary={`${completed.length} completed ${completed.length === 1 ? 'session' : 'sessions'}`}
+            defaultOpen={false}
+        >
             <p style={{ color: '#6b7280', marginBottom: '20px' }}>
                 How your reflection has grown across {completed.length} completed
                 {completed.length === 1 ? ' session' : ' sessions'}.
@@ -146,6 +151,6 @@ export function ReflectionJourney({ sessions }: { sessions: Session[] }) {
                     </div>
                 </>
             )}
-        </div>
+        </CollapsibleSection>
     );
 }
