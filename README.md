@@ -12,8 +12,10 @@
 [☁️ Cloudflare Demo](https://tina-7kw.pages.dev) • [🚀 Netlify (class)](https://tina-adie1.netlify.app) • [📖 Documentation](#features) • [🛠️ Setup](#getting-started)
 
 > **Live all-Cloudflare demo:** https://tina-7kw.pages.dev — the single-vendor build
-> (Cloudflare Pages + Worker auth + D1). Sign up with any email to try it. Chat needs
-> the instance's Gemini/HF keys set; auth, sessions, and the reflection UI work out of the box.
+> (Cloudflare Pages + Worker auth + D1). Sign up with any email and play immediately:
+> the chat runs on **free Cloudflare Workers AI** (real model, no key), rate-limited
+> per user. Set the instance's `GEMINI_API_KEY` secret to switch to live Gemini with
+> the full per-turn coaching telemetry.
 
 </div>
 

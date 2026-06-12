@@ -139,6 +139,63 @@ function streamText(text: string): Response {
     return new Response(readable, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
 }
 
+// Real AI for the demo via Cloudflare Workers AI (free, keyless). Streams an
+// open model's reply as plain-text deltas, with the scripted demo as a fallback
+// if the binding is missing or errors so the demo never breaks.
+const WORKERS_AI_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+
+async function handleWorkersAi(
+    contents: { role: string; parts: { text: string }[] }[],
+    systemInstruction: string | undefined,
+    env: Env,
+): Promise<Response> {
+    if (!env.AI) return streamText(demoReplyText(contents));
+    const messages = [
+        ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
+        ...contents.map((c) => ({ role: c.role === 'model' ? 'assistant' : 'user', content: c.parts[0]?.text || '' })),
+    ];
+    try {
+        const upstream: any = await env.AI.run(WORKERS_AI_MODEL, { messages, stream: true, max_tokens: 768 });
+        const body: ReadableStream<Uint8Array> | undefined = upstream?.body || upstream;
+        if (!body || typeof (body as any).getReader !== 'function') {
+            // Non-streaming shape: { response: "..." }
+            const text = typeof upstream?.response === 'string' ? upstream.response : demoReplyText(contents);
+            return streamText(text);
+        }
+        const reader = (body as ReadableStream<Uint8Array>).getReader();
+        const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
+        let buffer = '';
+        let emitted = false;
+        const readable = new ReadableStream({
+            async pull(controller) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    if (!emitted) controller.enqueue(encoder.encode(demoReplyText(contents)));
+                    controller.close();
+                    return;
+                }
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                    const t = line.trim();
+                    if (!t.startsWith('data:')) continue;
+                    const payload = t.slice(5).trim();
+                    if (!payload || payload === '[DONE]') continue;
+                    try {
+                        const delta = JSON.parse(payload)?.response;
+                        if (delta) { emitted = true; controller.enqueue(encoder.encode(delta)); }
+                    } catch { /* partial json across chunks */ }
+                }
+            },
+        });
+        return new Response(readable, { headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
+    } catch {
+        return streamText(demoReplyText(contents));
+    }
+}
+
 export async function handleAi(body: any, env: Env): Promise<Response> {
     const GEMINI_KEY = env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || '';
     const HF_KEY = env.HF_API_KEY || env.VITE_HUGGINGFACE_API_KEY || '';
@@ -150,10 +207,14 @@ export async function handleAi(body: any, env: Env): Promise<Response> {
         const contents = sanitizeContents(body?.contents);
         if (!contents || contents.length === 0) return json(400, { error: 'invalid_contents' });
 
-        // No key -> demo mode for chat (instant playability); JSON extraction
-        // stays a no-op so the research pipeline simply skips.
+        // No Gemini key -> demo runs on free Cloudflare Workers AI (real model,
+        // rate-limited upstream). JSON extraction stays a no-op so the research
+        // pipeline simply skips.
         if (!GEMINI_KEY) {
-            if (kind === 'gemini-chat') return streamText(demoReplyText(contents));
+            if (kind === 'gemini-chat') {
+                const sys = typeof body?.systemInstruction === 'string' ? body.systemInstruction : undefined;
+                return handleWorkersAi(contents, sys, env);
+            }
             return json(503, { error: 'gemini_key_not_configured' });
         }
 

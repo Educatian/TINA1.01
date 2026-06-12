@@ -12,6 +12,11 @@ binding = "DB"
 database_name = "tina-db"
 database_id = "2d22dfe6-dfef-4d40-b303-56637bdfc195"
 
+# Cloudflare Workers AI (free tier, keyless) — the demo's real model when no
+# Gemini key is set. Single-vendor + naturally rate-limited.
+[ai]
+binding = "AI"
+
 # Live presence (Durable Object) note:
 # Pages cannot DEFINE a Durable Object class in its own _worker.js -- the class
 # must live in a standalone Worker and Pages binds to it via script_name. The

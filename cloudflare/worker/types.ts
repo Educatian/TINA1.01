@@ -11,6 +11,8 @@ export interface Env {
     ADMIN_EMAILS?: string;
     // Durable Object namespace for live presence (see presence.ts)
     PRESENCE: DurableObjectNamespace;
+    // Cloudflare Workers AI (free, keyless) — powers the demo when no Gemini key
+    AI?: { run(model: string, opts: Record<string, unknown>): Promise<any> };
 }
 
 export interface DurableObjectId { toString(): string; }

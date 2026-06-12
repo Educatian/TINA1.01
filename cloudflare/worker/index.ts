@@ -19,6 +19,7 @@ import { PresenceRoom } from './presence';
 export { PresenceRoom };
 
 const RATE_LIMIT_PER_HOUR = 900;
+const DEMO_RATE_LIMIT_PER_HOUR = 40; // tighter cap for the free keyless demo
 
 function json(status: number, body: unknown): Response {
     return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -77,14 +78,14 @@ async function handleAuth(path: string, req: Request, env: Env): Promise<Respons
 }
 
 // ---- per-user hourly rate limit for AI calls (best-effort) ------------------
-async function underRateLimit(env: Env, userId: string, kind: string): Promise<boolean> {
+async function underRateLimit(env: Env, userId: string, kind: string, cap: number): Promise<boolean> {
     try {
         const hourAgo = new Date(Date.now() - 3600_000).toISOString();
         const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM api_request_log WHERE user_id = ? AND created_at >= ?')
             .bind(userId, hourAgo).first<{ n: number }>();
         await env.DB.prepare('INSERT INTO api_request_log (id, user_id, kind) VALUES (?, ?, ?)')
             .bind(crypto.randomUUID(), userId, kind).run();
-        return !row || row.n < RATE_LIMIT_PER_HOUR;
+        return !row || row.n < cap;
     } catch {
         return true; // never block the class on telemetry failure
     }
@@ -115,7 +116,11 @@ export default {
                 const claims = await authUser(req, env, nowSec());
                 if (!claims) return json(401, { error: 'unauthorized' });
                 const body = await readJson(req);
-                if (!(await underRateLimit(env, claims.sub, String(body?.kind || '')))) {
+                // The keyless demo runs on free Workers AI, so it gets a much
+                // tighter per-user hourly cap than a key-backed deployment.
+                const keyed = Boolean(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY);
+                const cap = keyed ? RATE_LIMIT_PER_HOUR : DEMO_RATE_LIMIT_PER_HOUR;
+                if (!(await underRateLimit(env, claims.sub, String(body?.kind || ''), cap))) {
                     return json(429, { error: 'rate_limited' });
                 }
                 return await handleAi(body, env);
