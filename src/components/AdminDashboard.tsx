@@ -8,7 +8,36 @@ import { assignLearnerToActivity, defaultActivityConfig, deleteInstructorActivit
 import { setRolePreview } from '../services/rolePreview';
 import { listFeedbackRequests, saveInstructorFeedback, type SessionFeedback } from '../services/feedbackService';
 import { ActivityConfigForm } from './ActivityConfigForm';
+import { InfoTip } from './InfoTip';
 import type { ActivityConfig, ActivityEnrollment, ActivityRecord, Session, SessionOutput } from '../types';
+
+// What each dashboard tab/section means + which data it holds. Surfaced as
+// hover/focus tooltips so the dashboard is self-explanatory.
+const TAB_INFO: Record<string, string> = {
+    activity: 'Build one shared activity, publish it, assign learners, and monitor progress (started / completed / needs follow-up).',
+    overview: 'A snapshot of the selected activity: session count, completion rate, average turns, and the most recent sessions.',
+    analytics: 'Per-turn HuggingFace NLP analysis (sentiment, emotion, engagement, AI attitude) aggregated from the session_analytics table.',
+    research: 'Gemini-structured reflection signals per turn and per session (reflection depth, ethics mentions, practicum linkage) for learning-analytics research.',
+    moves: "Per-turn coaching moves from coaching_turns, grounded in Korthagen's ALACT cycle and reflection levels. Each move is both the LLM control signal and the logged research event.",
+    review: 'A queue of auto-extracted signals flagged as needing a human to verify or correct them.',
+    coding: 'Hand-code each turn (reflection depth, uncertainty, AI stance, ethics, practicum link) and compare it against the machine coding for inter-rater reliability.',
+    feedback: 'Sessions where a learner asked for instructor feedback, plus the personal notes you have sent back.',
+    users: 'Registered accounts and their role (admin / user); promote or demote admins here.',
+};
+
+const SECTION_INFO = {
+    emotion: 'How often each detected emotion (joy, fear, anger, etc.) appeared across analyzed learner turns.',
+    attitude: "Learners' detected stance toward AI (enthusiast, skeptic, pragmatist, anxious) across turns.",
+    rawAnalytics: 'The most recent per-turn analytics rows that feed the summaries above.',
+    recentSessions: 'The latest learner sessions for the selected activity, with status and turn count.',
+    turnSignals: 'Gemini-extracted signals for each turn: reflection depth, uncertainty, AI stance, ethics concern, and practicum linkage.',
+    sessionTrajectory: "Session-level synthesis of how a learner's reflection developed across the whole conversation.",
+    levelDist: 'Share of turns classified technical / descriptive / critical — the overall reflection-depth mix.',
+    moveFreq: 'How often each coaching move (Elicit, Look back, Deepen, Scaffold, Reframe, etc.) was selected.',
+    alact: "Whether sessions walk Korthagen's full cycle: Action, Looking back, Awareness, Alternatives, Trial.",
+    reflTrajectory: "One learner's reflection level turn by turn across a session.",
+    classifierAgreement: "How often the fast lexical classifier agrees with Gemini's depth judgment — a measurement-validity check.",
+} as const;
 
 interface UserProfile { id: string; email: string; role: string; created_at: string; }
 interface SessionAnalyticsRecord {
@@ -811,6 +840,7 @@ export function AdminDashboard() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`admin-tab ${activeTab === tab.id ? 'admin-tab-active' : ''}`}
+            title={TAB_INFO[tab.id]}
           >
             {tab.label}
           </button>
@@ -1033,7 +1063,7 @@ export function AdminDashboard() {
               <div className="stat-card stat-card-compact"><h3>Avg. Turns</h3><div className="value">{avgTurns}</div></div>
               <div className="stat-card stat-card-compact"><h3>Completion Rate</h3><div className="value">{filteredSessions.length > 0 ? Math.round((completedSessions.length / filteredSessions.length) * 100) : 0}%</div></div>
             </div>
-            <h2 className="dashboard-section-title">Recent Sessions</h2>
+            <h2 className="dashboard-section-title">Recent Sessions<InfoTip text={SECTION_INFO.recentSessions} /></h2>
             <div className="sessions-table dashboard-table-shell">
               <table><thead><tr><th>User</th><th>Date</th><th>Turns</th><th>Status</th><th>Actions</th></tr></thead><tbody>
                 {filteredSessions.slice(0, 20).map((session) => {
@@ -1060,15 +1090,15 @@ export function AdminDashboard() {
           </div>
           <div className="analytics-grid analytics-grid-compact">
             <div className="analytics-panel">
-              <h3 className="analytics-panel-title">Emotion Distribution</h3>
+              <h3 className="analytics-panel-title">Emotion Distribution<InfoTip text={SECTION_INFO.emotion} /></h3>
               {Object.entries(emotionCounts).slice(0, 6).map(([emotion, count]) => <div key={emotion} className="analytics-row"><span className="analytics-row-label">{emotion}</span><progress className={`analytics-progress analytics-progress-${getEmotionTone(emotion)}`} max={sessionAnalytics.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
             </div>
             <div className="analytics-panel">
-              <h3 className="analytics-panel-title">AI Attitude Distribution</h3>
+              <h3 className="analytics-panel-title">AI Attitude Distribution<InfoTip text={SECTION_INFO.attitude} /></h3>
               {Object.entries(attitudeCounts).slice(0, 4).map(([attitude, count]) => <div key={attitude} className="analytics-row"><span className="analytics-row-label">{attitude}</span><progress className={`analytics-progress analytics-progress-${getAttitudeTone(attitude)}`} max={sessionAnalytics.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
             </div>
           </div>
-          <h3 className="dashboard-section-title">Raw Analytics Data (Last 50)</h3>
+          <h3 className="dashboard-section-title">Raw Analytics Data (Last 50)<InfoTip text={SECTION_INFO.rawAnalytics} /></h3>
           <div className="sessions-table dashboard-table-shell">
             <table><thead><tr><th>Turn</th><th>Sentiment</th><th>Engagement</th><th>Emotion</th><th>AI Attitude</th><th>Efficacy</th><th>Date</th></tr></thead><tbody>
               {sessionAnalytics.slice(0, 50).map((record) => <tr key={record.id}><td>{record.turn_number}</td><td className={record.sentiment_score > 0.5 ? 'metric-positive-cell' : 'metric-danger-cell'}>{record.sentiment_score?.toFixed(2) || '-'}</td><td>{record.engagement_score?.toFixed(2) || '-'}</td><td>{record.emotion_label || '-'}</td><td>{record.ai_attitude || '-'}</td><td>{record.self_efficacy_level || '-'}</td><td>{new Date(record.created_at).toLocaleDateString()}</td></tr>)}
@@ -1093,13 +1123,13 @@ export function AdminDashboard() {
           </div>
           <div className="analytics-grid analytics-grid-compact">
             <div className="analytics-panel">
-              <h3 className="analytics-panel-title">Turn-Level Signals</h3>
+              <h3 className="analytics-panel-title">Turn-Level Signals<InfoTip text={SECTION_INFO.turnSignals} /></h3>
               {Object.entries(depthCounts).slice(0, 3).map(([depth, count]) => <div key={depth} className="analytics-row"><span className="analytics-row-label">{depth}</span><progress className="analytics-progress analytics-progress-info" max={reflectionSignals.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
               {Object.entries(uncertaintyCounts).slice(0, 3).map(([level, count]) => <div key={level} className="analytics-row"><span className="analytics-row-label">{level} uncertainty</span><progress className="analytics-progress analytics-progress-warning" max={reflectionSignals.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
               {Object.entries(stanceCounts).slice(0, 4).map(([stance, count]) => <div key={stance} className="analytics-row"><span className="analytics-row-label">{stance}</span><progress className="analytics-progress analytics-progress-positive" max={reflectionSignals.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
             </div>
             <div className="analytics-panel">
-              <h3 className="analytics-panel-title">Session Trajectory</h3>
+              <h3 className="analytics-panel-title">Session Trajectory<InfoTip text={SECTION_INFO.sessionTrajectory} /></h3>
               {Object.entries(sessionArcCounts).slice(0, 4).map(([arc, count]) => <div key={arc} className="analytics-row"><span className="analytics-row-label">{arc.replaceAll('_', ' ')}</span><progress className="analytics-progress analytics-progress-info" max={reflectionSummaries.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
               {Object.entries(supportCounts).slice(0, 5).map(([support, count]) => <div key={support} className="analytics-row"><span className="analytics-row-label">{support.replaceAll('_', ' ')}</span><progress className="analytics-progress analytics-progress-warning" max={reflectionSummaries.length || 1} value={count} /><span className="analytics-row-value">{count}</span></div>)}
             </div>
@@ -1241,7 +1271,7 @@ export function AdminDashboard() {
               </div>
               <div className="dashboard-panel-grid">
                 <div className="analytics-panel">
-                  <h3 className="analytics-panel-title">Reflection-Level Distribution</h3>
+                  <h3 className="analytics-panel-title">Reflection-Level Distribution<InfoTip text={SECTION_INFO.levelDist} /></h3>
                   {LEVEL_ORDER.filter((level) => moveLevelCounts[level]).map((level) => (
                     <div key={level} className="analytics-row">
                       <span className="analytics-row-label">{level}</span>
@@ -1251,7 +1281,7 @@ export function AdminDashboard() {
                   ))}
                 </div>
                 <div className="analytics-panel">
-                  <h3 className="analytics-panel-title">Move Usage Frequency</h3>
+                  <h3 className="analytics-panel-title">Move Usage Frequency<InfoTip text={SECTION_INFO.moveFreq} /></h3>
                   {Object.entries(moveCounts).sort((a, b) => (b[1] as number) - (a[1] as number)).map(([move, count]) => (
                     <div key={move} className="analytics-row">
                       <span className="analytics-row-label">{move.replaceAll('_', ' ').toLowerCase()}</span>
@@ -1263,7 +1293,7 @@ export function AdminDashboard() {
               </div>
               <div className="dashboard-panel-grid">
                 <div className="analytics-panel">
-                  <h3 className="analytics-panel-title">Session Arc — ALACT Phase Coverage</h3>
+                  <h3 className="analytics-panel-title">Session Arc — ALACT Phase Coverage<InfoTip text={SECTION_INFO.alact} /></h3>
                   {ALACT_ORDER.filter((phase) => alactPhaseCounts[phase]).map((phase) => (
                     <div key={phase} className="analytics-row">
                       <span className="analytics-row-label">{phase.replaceAll('_', ' ')}</span>
@@ -1274,7 +1304,7 @@ export function AdminDashboard() {
                 </div>
                 <section className="dashboard-panel">
                   <div className="dashboard-panel-header">
-                    <h3 className="dashboard-panel-title">Reflection Trajectory</h3>
+                    <h3 className="dashboard-panel-title">Reflection Trajectory<InfoTip text={SECTION_INFO.reflTrajectory} /></h3>
                     <select value={trajectoryLearnerId || ''} onChange={(event) => setSelectedMoveLearnerId(event.target.value)}>
                       {moveLearnerIds.map((learnerId) => {
                         const learner = users.find((profile) => profile.id === learnerId);
@@ -1303,7 +1333,7 @@ export function AdminDashboard() {
                 <div className="dashboard-panel-grid">
                   <section className="dashboard-panel">
                     <div className="dashboard-panel-header">
-                      <h3 className="dashboard-panel-title">Classifier Agreement (lexical vs Gemini)</h3>
+                      <h3 className="dashboard-panel-title">Classifier Agreement (lexical vs Gemini)<InfoTip text={SECTION_INFO.classifierAgreement} /></h3>
                       <span className="dashboard-panel-meta">{classifierAgreement.matched} matched turns · {classifierAgreement.agreementPct}% agree</span>
                     </div>
                     <p className="activity-support-copy">
