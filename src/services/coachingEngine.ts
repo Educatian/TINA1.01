@@ -152,6 +152,22 @@ export interface ClassifiedTurn {
     critical: boolean;      // shows critical-level markers (why/assumption/tension)
     wordCount: number;
   };
+  /**
+   * Conversational-uptake context (Demszky et al. 2021: a quality tutor turn
+   * visibly builds on the student's previous turn; AutoTutor's LSA
+   * "good-answerness" analog for engagement with the pending question).
+   */
+  uptake: {
+    /** Salient quotable phrase from THIS learner turn (their own words). */
+    anchor: string | null;
+    /** The question TINA last asked — what the learner was responding to. */
+    lastAiQuestion: string | null;
+    /**
+     * True when a SUBSTANTIVE learner turn shares no content words with the
+     * pending question: the learner stepped onto a new thread (off-track).
+     */
+    digression: boolean;
+  };
 }
 
 const norm = (s: string): string =>
@@ -198,12 +214,143 @@ function countHits(text: string, lexicon: string[]): number {
   return lexicon.reduce((n, kw) => (text.includes(kw) ? n + 1 : n), 0);
 }
 
+// --------------------------------------------------------------------------
+// 2b) UPTAKE + ALIGNMENT — pure lexical machinery for conversational grounding
+// --------------------------------------------------------------------------
+// Theory anchors:
+//  - Conversational uptake (Demszky et al., 2021): tutor turns that restate/
+//    reference the student's previous contribution predict quality; recent
+//    LLM-tutor training work optimizes this metric directly.
+//  - AutoTutor (Graesser et al.): assesses each student answer against the
+//    pending expectation via lexical/LSA overlap before choosing the next
+//    dialogue move — never advances the script on a non-engaging answer.
+//  - Stepwise topic transition (conversation analysis, Jefferson/Sacks):
+//    natural conversations shift topics by PIVOTING off the prior topic
+//    ("speaking of X …"), not by boundaried jumps — the bridge directive
+//    renders an off-track turn this way instead of ignoring it.
+
+const STOPWORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'but', 'so', 'if', 'then', 'than', 'that', 'this', 'these', 'those',
+  'i', 'me', 'my', 'mine', 'we', 'our', 'us', 'you', 'your', 'yours', 'he', 'she', 'it', 'its', 'they',
+  'them', 'their', 'is', 'am', 'are', 'was', 'were', 'be', 'been', 'being', 'do', 'does', 'did', 'doing',
+  'have', 'has', 'had', 'having', 'will', 'would', 'can', 'could', 'should', 'shall', 'may', 'might',
+  'must', 'not', 'no', 'yes', 'yeah', 'okay', 'ok', 'to', 'of', 'in', 'on', 'at', 'by', 'for', 'with',
+  'about', 'into', 'over', 'under', 'from', 'up', 'down', 'out', 'off', 'as', 'too', 'very', 'just',
+  'also', 'there', 'here', 'when', 'where', 'what', 'which', 'who', 'whom', 'how', 'why', 'all', 'any',
+  'some', 'more', 'most', 'other', 'such', 'only', 'own', 'same', 'few', 'both', 'each', 'because',
+  'while', 'during', 'before', 'after', 'again', 'once', 'really', 'well', 'kind', 'sort', 'thing',
+  'things', 'stuff', 'lot', 'bit', 'way', 'like', 'get', 'got', 'go', 'going', 'know', 'think', 'guess',
+  'maybe', 'something', 'anything', 'everything', 'someone', 'dont', "don't", 'im', "i'm", 'ive', "i've",
+  'its', "it's", 'thats', "that's", 'one', 'two', 'much', 'many', 'still', 'even', 'now', 'time',
+]);
+
+/** Content words of an utterance: normalized, stopwords removed, length >= 3. */
+export function contentWords(text: string): string[] {
+  return norm(text).split(' ').filter((w) => w.length >= 3 && !STOPWORDS.has(w));
+}
+
+// Cheap stemming for overlap ("grading"/"graded" -> "grad", "essays" -> "essay").
+function lightStem(w: string): string {
+  if (w.length > 5 && w.endsWith('ing')) return w.slice(0, -3);
+  if (w.length > 4 && (w.endsWith('ed') || w.endsWith('es'))) return w.slice(0, -2);
+  if (w.length > 3 && w.endsWith('s')) return w.slice(0, -1);
+  return w;
+}
+
+function fuzzyEquals(a: string, b: string): boolean {
+  if (a === b) return true;
+  const sa = lightStem(a);
+  const sb = lightStem(b);
+  if (sa === sb) return true;
+  if (sa.length < 4 || sb.length < 4) return false;
+  return sa.startsWith(sb) || sb.startsWith(sa);
+}
+
+/** Count of content words the two utterances share (fuzzy-stemmed). */
+export function sharedContentCount(a: string, b: string): number {
+  const wa = contentWords(a);
+  const wb = contentWords(b);
+  return wa.filter((x) => wb.some((y) => fuzzyEquals(x, y))).length;
+}
+
+/**
+ * The question TINA last asked: the LAST question-sentence of the most recent
+ * model message. This is what the learner's current turn is (or is not)
+ * responding to. Null when no model message asked anything.
+ */
+export function lastAiQuestionFrom(history: { role: string; text: string }[]): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.role !== 'model' || !(m.text || '').trim()) continue;
+    const sentences = m.text.match(/[^.!?]*\?/g);
+    if (!sentences) return null;
+    const last = sentences[sentences.length - 1].trim();
+    return last.length >= 8 ? last : null;
+  }
+  return null;
+}
+
+const MAX_ANCHOR_CHARS = 60;
+
+/**
+ * extractUptakeAnchor — PURE. Picks the most salient quotable phrase from the
+ * learner's utterance (their OWN words) so directives can instruct the
+ * renderer to visibly take it up. Clause with the densest content (substance
+ * lexicon hits weigh double), trimmed to a quotable length.
+ */
+export function extractUptakeAnchor(text: string): string | null {
+  const clauses = (text || '').split(/[.!?;,\n]+/).map((c) => c.trim()).filter(Boolean);
+  let best: { clause: string; score: number } | null = null;
+  for (const clause of clauses) {
+    const words = contentWords(clause);
+    if (words.length < 2) continue;
+    const t = norm(clause);
+    const lexHits =
+      countHits(t, IDENTITY_CUES) + countHits(t, AI_USE_CUES) +
+      countHits(t, AI_SOCIETY_CUES) + countHits(t, CRITICAL_CUES);
+    const score = words.length + lexHits * 2;
+    if (!best || score > best.score) best = { clause, score };
+  }
+  if (!best) return null;
+  let anchor = best.clause;
+  if (anchor.length > MAX_ANCHOR_CHARS) {
+    const cut = anchor.slice(0, MAX_ANCHOR_CHARS);
+    anchor = `${cut.slice(0, cut.lastIndexOf(' ') > 20 ? cut.lastIndexOf(' ') : MAX_ANCHOR_CHARS)}…`;
+  }
+  return anchor;
+}
+
+// A digression must be a SUBSTANTIVE turn — short answers ("ok", "I guess")
+// are minimal/shallow turns, already handled by the depth logic, not topic shifts.
+const DIGRESSION_MIN_WORDS = 8;
+
+/**
+ * assessUptake — PURE. Computes the uptake context for a learner turn against
+ * the conversation history: their quotable anchor, the pending TINA question,
+ * and whether this substantive turn disengaged from it (digression).
+ */
+export function assessUptake(
+  text: string,
+  history: { role: string; text: string }[],
+): ClassifiedTurn['uptake'] {
+  const anchor = extractUptakeAnchor(text);
+  const lastAiQuestion = lastAiQuestionFrom(history);
+  const wordCount = norm(text).split(' ').filter(Boolean).length;
+  const digression = Boolean(
+    lastAiQuestion &&
+    anchor &&
+    wordCount >= DIGRESSION_MIN_WORDS &&
+    sharedContentCount(text, lastAiQuestion) === 0,
+  );
+  return { anchor, lastAiQuestion, digression };
+}
+
 /**
  * classifyTurn — pure. Maps a learner utterance (+ optional recent history)
  * to {reflectionLevel, contentTags, cues} using lightweight lexical heuristics.
  * No network, no LLM. Safe to run synchronously before every turn.
  */
-export function classifyTurn(text: string, _history: { role: string; text: string }[] = []): ClassifiedTurn {
+export function classifyTurn(text: string, history: { role: string; text: string }[] = []): ClassifiedTurn {
   const t = norm(text);
   const wordCount = t ? t.split(' ').filter(Boolean).length : 0;
 
@@ -255,6 +402,7 @@ export function classifyTurn(text: string, _history: { role: string; text: strin
       critical: criticalHits >= 1,
       wordCount,
     },
+    uptake: assessUptake(text, history),
   };
 }
 
@@ -356,12 +504,13 @@ function fadeDirective(move: CoachingMove, level?: ReflectorLevel): string {
  * + the ALACT phase to advance to. Priority:
  *   1. End of time/turns  -> CLOSE_SYNTHESIS
  *   2. Strong affect/hesitation (not closing) -> AFFIRM_AND_HOLD (hold the space)
- *   3. Shallow turn while we need awareness:
+ *   3. Substantive off-track turn -> hold the phase, bridge stepwise back
+ *   4. Shallow turn while we need awareness:
  *        first shallow turn      -> DEEPEN_REFLECTION (open why-probe)
  *        2+ consecutive shallow  -> SCAFFOLD_WITH_STEM (sentence stem; repeated
  *                                   open probing without scaffolding stalls
  *                                   shallow reflectors instead of deepening them)
- *   4. Otherwise -> the move for the current ALACT phase, then advance.
+ *   5. Otherwise -> the move for the current ALACT phase, then advance.
  */
 export function selectMove(state: CoachingState): SelectedMove {
   const mk = (move: CoachingMove, nextPhase: AlactPhase, reason: string, directive?: string): SelectedMove => ({
@@ -388,7 +537,26 @@ export function selectMove(state: CoachingState): SelectedMove {
     return mk('AFFIRM_AND_HOLD', state.phase, 'affect_or_hesitation');
   }
 
-  // 3) Shallow turn at a phase that REQUIRES depth (reaching awareness or
+  // 3) Digression — a substantive turn that disengaged from the pending
+  //    question (AutoTutor never advances the script on a non-engaging answer;
+  //    the conversation-analysis fix is a STEPWISE transition, not a yank).
+  //    HOLD the phase and render the current phase's move through a bridge:
+  //    take up the new thread in the learner's own words, then pivot back.
+  // (the closing case already returned above)
+  if (c.uptake.digression) {
+    const baseMove = PHASE_TO_MOVE[state.phase];
+    const bridge =
+      `BRIDGE FIRST: the learner's reply stepped away from your last question onto a new thread ` +
+      `("${c.uptake.anchor}"). Do not ignore the new thread, and do not yank the conversation back ` +
+      `abruptly. First take up their words — acknowledge the new thread in one warm clause — then ` +
+      `pivot back to the reflection focus with a stepwise transition that explicitly links the new ` +
+      `thread to it (in the spirit of "speaking of ${c.uptake.anchor}…" / "that connects to…"). ` +
+      `Then enact: ${MOVES[baseMove].directive}`;
+    // do NOT advance the phase — its material has not been produced yet
+    return mk(baseMove, state.phase, 'digression_bridge', bridge);
+  }
+
+  // 4) Shallow turn at a phase that REQUIRES depth (reaching awareness or
   //    creating alternatives): push deeper before advancing, so we never move
   //    the cycle forward on thin material. We do NOT deepen at 'action' (we are
   //    still surfacing) or 'looking_back' (description is exactly what we want
@@ -412,7 +580,7 @@ export function selectMove(state: CoachingState): SelectedMove {
     );
   }
 
-  // 4) Default: the move for the current phase, then advance one step.
+  // 5) Default: the move for the current phase, then advance one step.
   //    Coverage steering (single pacing authority lives HERE, not in the
   //    system prompt's old per-layer turn budget): if the AI-and-society
   //    layer has not surfaced by the time we create alternatives, point the
@@ -454,10 +622,15 @@ export interface VerifyResult {
  * "reflective mirror, not advisor" stance for a NON-closing move:
  *   - lectured / gave prescriptive advice instead of reflecting, OR
  *   - asked no question at all (a coaching turn should pose ONE question), OR
- *   - asked multiple questions (the system prompt's ONE-question rule).
+ *   - asked multiple questions (the system prompt's ONE-question rule), OR
+ *   - (when learnerText is supplied) showed ZERO conversational uptake: the
+ *     reply shares no content words at all with the learner's message it is
+ *     answering — a disconnected, context-blind turn. Deliberately lenient
+ *     (any single shared/fuzzy-stemmed content word passes) so paraphrase
+ *     never false-positives; it only catches true non-sequiturs.
  * CLOSE_SYNTHESIS is exempt: the report is declarative by design.
  */
-export function verifyRender(move: CoachingMove, llmText: string): VerifyResult {
+export function verifyRender(move: CoachingMove, llmText: string, learnerText?: string): VerifyResult {
   const violations: string[] = [];
   const text = llmText || '';
   const lower = norm(text);
@@ -481,6 +654,12 @@ export function verifyRender(move: CoachingMove, llmText: string): VerifyResult 
     violations.push('too_many_questions');
   }
 
+  // conversational uptake: only judged when the learner turn was substantive
+  // enough to have something to take up (>= 4 content words).
+  if (learnerText && contentWords(learnerText).length >= 4 && sharedContentCount(text, learnerText) === 0) {
+    violations.push('no_uptake');
+  }
+
   return { ok: violations.length === 0, violations };
 }
 
@@ -498,6 +677,9 @@ export function regenerationHint(move: CoachingMove, violations: string[]): stri
   }
   if (violations.includes('too_many_questions')) {
     parts.push('Ask exactly ONE question, not several.');
+  }
+  if (violations.includes('no_uptake')) {
+    parts.push('Your reply did not connect to what the learner actually said. Open by explicitly referencing or restating their own words from their last message, THEN ask your one question.');
   }
   parts.push(`Keep enacting the move: ${MOVES[move].directive}`);
   return parts.join(' ');
@@ -553,7 +735,7 @@ export interface RunResult extends SelectedMove {
   classified: ClassifiedTurn;
 }
 
-/** classify -> select, in one pure call. Used by ChatInterface per turn. */
+/** classify -> select -> ground, in one pure call. Used by ChatInterface per turn. */
 export function runCoachingTurn(input: RunInput): RunResult {
   const classified = classifyTurn(input.text, input.history);
   const state: CoachingState = {
@@ -568,5 +750,22 @@ export function runCoachingTurn(input: RunInput): RunResult {
     reflectorLevel: input.reflectorLevel,
   };
   const selected = selectMove(state);
-  return { ...selected, classified };
+
+  // Conversational-uptake grounding: every coaching turn (except the closing
+  // report, and except a bridge — which already scripts its own uptake) must
+  // visibly build on the learner's actual words, so the reply continues from
+  // what they just said instead of issuing the next generic probe.
+  let directive = selected.directive;
+  if (
+    selected.move !== 'CLOSE_SYNTHESIS' &&
+    selected.reason !== 'digression_bridge' &&
+    classified.uptake.anchor
+  ) {
+    directive +=
+      ` Conversational uptake: open your reply by visibly building on the learner's last message — ` +
+      `briefly restate or reference their own words (e.g. "${classified.uptake.anchor}") in your ` +
+      `mirroring sentence before your question, so this turn clearly continues from what they just said.`;
+  }
+
+  return { ...selected, directive, classified };
 }

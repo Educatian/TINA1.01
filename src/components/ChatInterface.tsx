@@ -803,7 +803,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
             // nudged regeneration; otherwise pass through. Never blocks the class.
             if (coachingPlan) {
                 try {
-                    const check = verifyRender(coachingPlan.move, response.text || '');
+                    const check = verifyRender(coachingPlan.move, response.text || '', userMsg.text);
                     if (!check.ok) {
                         verified = false;
                         // Drop the rejected exchange so the regeneration does not
@@ -820,7 +820,7 @@ export function ChatInterface({ onSessionComplete }: ChatInterfaceProps) {
                         // Only adopt the retry if it produced text; otherwise keep the first.
                         if (retry.text) {
                             response = retry;
-                            verified = verifyRender(coachingPlan.move, response.text || '').ok;
+                            verified = verifyRender(coachingPlan.move, response.text || '', userMsg.text).ok;
                         }
                     }
                 } catch (verifyErr) {

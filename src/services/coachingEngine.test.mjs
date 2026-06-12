@@ -15,6 +15,11 @@ import {
   regenerationHint,
   runCoachingTurn,
   buildGroundingExcerpts,
+  contentWords,
+  sharedContentCount,
+  lastAiQuestionFrom,
+  extractUptakeAnchor,
+  assessUptake,
 } from './coachingEngine.ts';
 
 const baseState = (over = {}) => ({
@@ -319,4 +324,133 @@ test('faded scaffolding: reflectorLevel does not change non-scaffolding moves', 
   assert.equal(a.move, 'NAME_ESSENTIAL');
   assert.equal(b.move, 'NAME_ESSENTIAL');
   assert.equal(a.directive, b.directive, 'a critical turn is unaffected by reflector level');
+});
+
+// ============================================================================
+// UPTAKE + ALIGNMENT GUARDRAILS (conversational grounding / stepwise bridge)
+// ============================================================================
+
+const aiTurn = (text) => ({ role: 'model', text });
+const learnerTurn = (text) => ({ role: 'user', text });
+
+test('contentWords: strips stopwords and short tokens', () => {
+  const w = contentWords('I think the students were using ChatGPT for essays');
+  assert.ok(w.includes('students') && w.includes('chatgpt') && w.includes('essays'));
+  assert.ok(!w.includes('the') && !w.includes('think'));
+});
+
+test('sharedContentCount: fuzzy-stemmed overlap (grading/grade matches)', () => {
+  assert.ok(sharedContentCount('How do you feel about grading with AI?', 'I graded the essays myself') >= 1);
+  assert.equal(sharedContentCount('How was your lesson plan?', 'My football team lost yesterday'), 0);
+});
+
+test('lastAiQuestionFrom: last question sentence of the most recent model turn', () => {
+  const history = [
+    aiTurn('Welcome! What brings you here today?'),
+    learnerTurn('I want to talk about AI.'),
+    aiTurn('That sounds important. When you used AI for grading, what did you feel in that moment?'),
+  ];
+  const q = lastAiQuestionFrom(history);
+  assert.match(q, /what did you feel in that moment\?$/i);
+});
+
+test('lastAiQuestionFrom: null when the latest model turn asked nothing', () => {
+  assert.equal(lastAiQuestionFrom([aiTurn('Thank you for sharing that thought.')]), null);
+  assert.equal(lastAiQuestionFrom([]), null);
+});
+
+test('extractUptakeAnchor: picks the substantive clause and stays quotable', () => {
+  const anchor = extractUptakeAnchor('Yeah, I guess so. Honestly I rely on ChatGPT for my lesson planning every single week.');
+  assert.ok(anchor && anchor.toLowerCase().includes('chatgpt'));
+  assert.ok(anchor.length <= 61);
+  assert.equal(extractUptakeAnchor('ok'), null);
+});
+
+test('assessUptake: substantive reply ignoring the question = digression', () => {
+  const history = [aiTurn('When you used AI for grading essays, what did you feel about fairness?')];
+  const off = assessUptake('By the way my school just announced a new schedule for parent meetings next month', history);
+  assert.equal(off.digression, true);
+  const on = assessUptake('I felt the grading was unfair to students who wrote by hand', history);
+  assert.equal(on.digression, false);
+});
+
+test('assessUptake: short or question-less contexts never flag digression', () => {
+  const history = [aiTurn('When you used AI for grading, what did you feel?')];
+  assert.equal(assessUptake('not sure really', history).digression, false, 'short turn is minimal, not digression');
+  assert.equal(assessUptake('My school announced a brand new schedule for parent meetings next month', [aiTurn('I hear you.')]).digression, false, 'no pending question');
+});
+
+test('selectMove: digression holds the phase and renders a stepwise bridge', () => {
+  const classified = classifyTurn(
+    'By the way my school just announced a new schedule for parent meetings next month',
+    [aiTurn('When you used AI for grading essays, what did you feel about fairness?')],
+  );
+  const s = selectMove(baseState({ phase: 'awareness', classified }));
+  assert.equal(s.nextPhase, 'awareness', 'phase is held — its material was not produced');
+  assert.equal(s.reason, 'digression_bridge');
+  assert.match(s.directive, /BRIDGE FIRST/);
+  assert.match(s.directive, /speaking of/i);
+  assert.match(s.directive, /NAME_ESSENTIAL/, 'still enacts the held phase move (diagnostic goal kept)');
+});
+
+test('selectMove: closing beats bridging; affect-hold beats bridging', () => {
+  const offTrack = classifyTurn(
+    'By the way my school just announced a new schedule for parent meetings next month',
+    [aiTurn('What did you feel about fairness in grading?')],
+  );
+  const closing = selectMove(baseState({ phase: 'awareness', classified: offTrack, turnIndex: 11, maxTurns: 12 }));
+  assert.equal(closing.move, 'CLOSE_SYNTHESIS');
+  const anxious = classifyTurn(
+    'By the way I am really worried and anxious about the new schedule at my school honestly',
+    [aiTurn('What did you feel about fairness in grading?')],
+  );
+  const held = selectMove(baseState({ phase: 'awareness', classified: anxious }));
+  assert.equal(held.move, 'AFFIRM_AND_HOLD', 'warmth before bridging');
+});
+
+test('runCoachingTurn: on-track turn gets the uptake anchor in the directive', () => {
+  const r = runCoachingTurn({
+    text: 'I felt torn because grading with AI seemed unfair to my handwriting students',
+    history: [aiTurn('When you used AI for grading essays, what did you feel about fairness?')],
+    phase: 'awareness',
+    turnIndex: 4,
+    maxTurns: 12,
+  });
+  assert.match(r.directive, /Conversational uptake/);
+  assert.ok(r.classified.uptake.anchor && r.directive.includes(r.classified.uptake.anchor));
+});
+
+test('runCoachingTurn: bridge turn does not double-instruct uptake', () => {
+  const r = runCoachingTurn({
+    text: 'By the way my school just announced a new schedule for parent meetings next month',
+    history: [aiTurn('When you used AI for grading essays, what did you feel about fairness?')],
+    phase: 'awareness',
+    turnIndex: 4,
+    maxTurns: 12,
+  });
+  assert.equal(r.reason, 'digression_bridge');
+  assert.match(r.directive, /BRIDGE FIRST/);
+  assert.ok(!r.directive.includes('Conversational uptake:'), 'bridge already scripts its own uptake');
+});
+
+test('verifyRender: zero-overlap reply flags no_uptake; any real uptake passes', () => {
+  const learner = 'I rely on ChatGPT for grading essays and it makes me feel guilty';
+  const disconnected = verifyRender('LOOK_BACK', 'Interesting. What would your ideal classroom look like someday?', learner);
+  assert.ok(disconnected.violations.includes('no_uptake'));
+  const connected = verifyRender('LOOK_BACK', 'You said grading with ChatGPT leaves you feeling guilty. What sits under that?', learner);
+  assert.ok(!connected.violations.includes('no_uptake'));
+});
+
+test('verifyRender: no_uptake is lenient — short learner turns and CLOSE are exempt', () => {
+  const short = verifyRender('LOOK_BACK', 'What would you like to explore today?', 'yes ok');
+  assert.ok(!short.violations.includes('no_uptake'));
+  const close = verifyRender('CLOSE_SYNTHESIS', 'TINA Reflection Report ...', 'I rely on ChatGPT for grading essays every week');
+  assert.equal(close.ok, true);
+  const legacy = verifyRender('LOOK_BACK', 'What matters most to you here?');
+  assert.ok(!legacy.violations.includes('no_uptake'), 'omitted learnerText keeps old behavior');
+});
+
+test('regenerationHint: no_uptake instructs referencing the learner words', () => {
+  const hint = regenerationHint('LOOK_BACK', ['no_uptake']);
+  assert.match(hint, /referencing or restating their own words/i);
 });

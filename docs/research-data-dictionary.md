@@ -64,8 +64,8 @@ levels (Van Manen; Hatton & Smith).
 | `reflection_level` | text        | `technical` \| `descriptive` \| `critical` (lexical classifier)                |
 | `content_tags`     | text[]      | subset of `identity`, `ai-use`, `ai-society`, `affect`                         |
 | `alact_phase`      | text        | `action`, `looking_back`, `awareness`, `alternatives`, `trial`, `closing`      |
-| `select_reason`    | text        | why the selector chose the move (e.g. `repeated_shallow_needs_scaffold`)        |
-| `verified`         | bool        | verifyRender ("mirror, not advisor") passed                                    |
+| `select_reason`    | text        | why the selector chose the move (e.g. `repeated_shallow_needs_scaffold`; `digression_bridge` = substantive off-track learner turn → phase held, stepwise bridge rendered) |
+| `verified`         | bool        | verifyRender passed: "mirror, not advisor" + conversational uptake (a reply sharing zero content words with the learner's message fails as `no_uptake`) |
 | `regenerated`      | bool        | a single nudged regeneration occurred                                          |
 | `latency_ms`       | int         | LLM response latency for the turn                                              |
 | `text_len`         | int         | learner utterance length (chars)                                              |
