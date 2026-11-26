@@ -3,37 +3,10 @@ import { supabase } from '../lib/supabase';
 import { clearRolePreview } from '../services/rolePreview';
 import type { User, AuthState } from '../types';
 
-// Instructor/admin accounts. The dashboard's instructor view is gated by
-// isAdmin; listing an email here grants it regardless of the profiles row, so
-// access never depends on a DB write succeeding.
-const OVERRIDE_ADMIN_EMAILS = new Set([
-    'jewoong.moon@gmail.com',
-    'hbae4@albany.edu', // Haesol Bae — ETAP608 instructor
-]);
+import { buildFallbackUser, isOverrideAdminEmail } from '../services/authFallback';
+
 const PROFILE_LOOKUP_TIMEOUT_MS = 3500;
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 5000;
-
-function isOverrideAdminEmail(email: string | undefined) {
-    return Boolean(email && OVERRIDE_ADMIN_EMAILS.has(email.toLowerCase()));
-}
-
-function buildFallbackUser(sessionUser: {
-    id: string;
-    email?: string;
-    created_at?: string;
-    user_metadata?: { role?: string };
-}): User {
-    const email = sessionUser.email || '';
-    const metadataRole = sessionUser.user_metadata?.role === 'admin' ? 'admin' : 'user';
-    const role = metadataRole !== 'admin' && isOverrideAdminEmail(email) ? 'admin' : metadataRole;
-
-    return {
-        id: sessionUser.id,
-        email,
-        role,
-        created_at: sessionUser.created_at || new Date().toISOString(),
-    };
-}
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> {
     return new Promise((resolve) => {
