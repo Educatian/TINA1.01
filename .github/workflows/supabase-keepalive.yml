@@ -14,6 +14,8 @@ on:
     - cron: "0 6 */2 * *" # every 2 days at 06:00 UTC
   workflow_dispatch: {}
 
+permissions: {}
+
 jobs:
   ping:
     runs-on: ubuntu-latest
@@ -27,12 +29,11 @@ jobs:
           set -euo pipefail
           url="${SUPABASE_URL}/rest/v1/activities?select=*&limit=1"
           echo "GET ${url}"
-          status=$(curl -sS -o /tmp/body.json -w '%{http_code}' \
+          status=$(curl --connect-timeout 10 --max-time 30 -sS -o /dev/null -w '%{http_code}' \
             -H "apikey: ${SUPABASE_ANON_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
             "${url}")
           echo "HTTP ${status}"
-          echo "Body: $(head -c 300 /tmp/body.json)"
           case "${status}" in
             2*) echo "Supabase project is awake." ;;
             *)  echo "::error::Keep-alive ping failed with HTTP ${status} — project may be paused. Restore it at https://supabase.com/dashboard/project/qjopomljrjjhukhjiwwm"
